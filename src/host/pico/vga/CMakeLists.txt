@@ -77,6 +77,7 @@ target_sources(rp6502-vga PRIVATE
     ${VGA_SRC}/scanvideo/scanvideo.c
     ${RP6502_ROOT}/src/core/sys/version.c
     ${VGA_SRC}/sys/com.c
+    ${VGA_SRC}/sys/cap.c
     ${VGA_SRC}/sys/flash.c
     ${VGA_SRC}/sys/led.c
     ${RP6502_ROOT}/src/core/sys/xram.c

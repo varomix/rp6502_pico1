@@ -34,6 +34,9 @@
  */
 
 void com_init(void);
+#if PICO_RP2040
+void com_dbg_out(const char *buf, int length);
+#endif
 void com_task(void);
 void com_pre_reclock(void);
 void com_post_reclock(void);

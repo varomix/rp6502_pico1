@@ -93,6 +93,17 @@ static void com_out_chars(const char *buf, int length)
     }
 }
 
+#if PICO_RP2040
+void com_dbg_out(const char *buf, int length) // Pico 1 port debug, USB only
+{
+    // Never blocks: with no host reading, com_out_chars would wait forever.
+    int room = (int)((com_out_tail + COM_OUT_BUF_SIZE - com_out_head - 1) % COM_OUT_BUF_SIZE);
+    if (length > room / 2)
+        return;
+    com_out_chars(buf, length);
+}
+#endif
+
 void com_init(void)
 {
     gpio_pull_up(COM_UART_TX_PIN);

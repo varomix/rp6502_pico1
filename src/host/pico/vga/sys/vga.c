@@ -7,6 +7,10 @@
 #include "vga/main.h"
 #include "vga/sys/ria.h"
 #include "vga/sys/vga.h"
+#include "vga/sys/com.h"
+#include "vga/sys/cap.h"
+#include <stdio.h>
+#include <hardware/timer.h>
 #include "core/vga/prog.h"
 #include "core/sys/xram.h"
 #include "core/term/term.h"
@@ -215,7 +219,14 @@ static void vga_scanvideo_switch(void)
     // Set system clock for the new video mode; must run before scanvideo_set_mode()
     uint32_t clk = vga_view_selected->default_timing->clock_freq;
     if (clk == 25200000)
+#if PICO_RP2040
+        /* Pico 1 port: the M0+ renders noticeably less per clock than the
+         * RP2350's M33 and misses scanlines at 201.6 MHz (blue lines, sprite
+         * holes), so 640x480 runs at 10x the pixel clock instead of 8x. */
+        clk = 25200000 * 10; // 252.0 MHz
+#else
         clk = 25200000 * 8; // 201.6 MHz
+#endif
     else if (clk == 54000000)
         clk = 54000000 * 4; // 216.0 MHz
     else if (clk == 37125000)
@@ -226,9 +237,9 @@ static void vga_scanvideo_switch(void)
         main_pre_reclock();
 #if PICO_RP2040
         /* Pico 1 port: the RP2040 is rated for 133 MHz and VGA runs it at up
-         * to 216 MHz. 1.20 V is the usual margin for that; raise it before
-         * the clock goes up and let the regulator settle. */
-        vreg_set_voltage(VREG_VOLTAGE_1_20);
+         * to 252 MHz. 1.20 V is the usual margin to 216 MHz and 1.25 V above
+         * it; raise it before the clock goes up and let the regulator settle. */
+        vreg_set_voltage(clk > 216000000 ? VREG_VOLTAGE_1_25 : VREG_VOLTAGE_1_20);
         busy_wait_us(1000);
 #endif
         set_sys_clock_khz(clk / 1000, true);
@@ -278,6 +289,12 @@ unsigned long vga_frame_count(void)
     return __atomic_load_n(&vga_frames, __ATOMIC_RELAXED);
 }
 
+#if PICO_RP2040
+/* Pico 1 port debug: render time per scanline, worst case per core. */
+extern volatile uint32_t scanvideo_dbg_missed;
+static volatile uint32_t vga_dbg_render_max[2], vga_dbg_render_n[2];
+#endif
+
 static void vga_render_scanline(void)
 {
     if (!mutex_try_enter(&vga_scanline_mutex, 0))
@@ -291,6 +308,9 @@ static void vga_render_scanline(void)
     }
     vga_rendering[get_core_num()] = true;
     mutex_exit(&vga_scanline_mutex);
+#if PICO_RP2040
+    const uint32_t dbg_t0 = timer_hw->timerawl;
+#endif
 
     const uint16_t width = vga_view_current->width;
     const uint32_t buffer_scanline_id = scanline_buffer->scanline_id;
@@ -326,6 +346,20 @@ static void vga_render_scanline(void)
                               prog.sprite_length[i]);
         }
     }
+#ifdef VGA_CAP
+    if (cap_state == CAP_WANT && scanline_id == cap_line)
+    {
+        uint8_t want = CAP_WANT;
+        if (__atomic_compare_exchange_n(&cap_state, &want, CAP_COPYING, false,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+        {
+            uint16_t *const planes[SCANVIDEO_PLANE_COUNT] = {
+                (uint16_t *)(data[0] + 1), (uint16_t *)(data[1] + 1), (uint16_t *)(data[2] + 1)};
+            cap_store(scanvideo_frame_number(buffer_scanline_id), scanline_id,
+                      width, vga_view_current->height, planes, filled);
+        }
+    }
+#endif
     for (int i = 0; i < SCANVIDEO_PLANE_COUNT; i++)
     {
         uint16_t data_used;
@@ -356,6 +390,15 @@ static void vga_render_scanline(void)
             break;
         }
     }
+#if PICO_RP2040
+    {
+        const uint32_t dt = timer_hw->timerawl - dbg_t0;
+        const uint core = get_core_num();
+        if (dt > vga_dbg_render_max[core])
+            vga_dbg_render_max[core] = dt;
+        vga_dbg_render_n[core]++;
+    }
+#endif
     scanvideo_end_scanline_generation(scanline_buffer);
     vga_scanline_complete(buffer_scanline_id);
     vga_rendering[get_core_num()] = false;
@@ -467,6 +510,24 @@ void vga_task(void)
 {
     vga_scanvideo_switch();
     vga_render_scanline();
+#if PICO_RP2040
+    static absolute_time_t dbg_next;
+    static uint32_t dbg_missed_last;
+    if (time_reached(dbg_next))
+    {
+        dbg_next = make_timeout_time_ms(2000);
+        uint32_t missed = scanvideo_dbg_missed;
+        char buf[96];
+        int n = snprintf(buf, sizeof(buf), "\r\n[vga miss=%lu +%lu max0=%luus max1=%luus n0=%lu n1=%lu]\r\n",
+                         (unsigned long)missed, (unsigned long)(missed - dbg_missed_last),
+                         (unsigned long)vga_dbg_render_max[0], (unsigned long)vga_dbg_render_max[1],
+                         (unsigned long)vga_dbg_render_n[0], (unsigned long)vga_dbg_render_n[1]);
+        dbg_missed_last = missed;
+        vga_dbg_render_max[0] = vga_dbg_render_max[1] = 0;
+        vga_dbg_render_n[0] = vga_dbg_render_n[1] = 0;
+        com_dbg_out(buf, n);
+    }
+#endif
 }
 
 bool vga_canvas_is_console(void)

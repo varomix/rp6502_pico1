@@ -7,6 +7,7 @@
 #include <tusb.h>
 #include "vga/sys/com.h"
 #include "vga/usb/cdc.h"
+#include "vga/sys/cap.h"
 
 static absolute_time_t break_timer;
 static bool is_breaking = false;
@@ -85,7 +86,10 @@ void cdc_task(void)
         {
             size_t data_len = tud_cdc_read(read_buf, bufsize);
             for (size_t i = 0; i < data_len; i++)
-                com_in_write(read_buf[i]);
+#ifdef VGA_CAP
+                if (!cap_filter_in(read_buf[i]))
+#endif
+                    com_in_write(read_buf[i]);
         }
     }
 
@@ -98,6 +102,10 @@ void cdc_task(void)
         cdc_mark_not_ready();
         return;
     }
+#ifdef VGA_CAP
+    if (cap_task())
+        return; // console output waits for the packet
+#endif
     if (tud_cdc_write_available())
     {
         while (!com_out_empty() && tud_cdc_write_char(com_out_peek()))

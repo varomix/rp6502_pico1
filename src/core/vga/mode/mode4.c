@@ -218,7 +218,7 @@ static inline void sprite_scanline16(
     bool span_continuous = false;
     if (sp->has_opacity_metadata)
     {
-        uint32_t meta = ((uint32_t *)((const uint8_t *)sp_img + size * size * sizeof(uint16_t)))[isct.tex_offs_y];
+        uint32_t meta = ((const mode_word_t *)((const uint8_t *)sp_img + size * size * sizeof(uint16_t)))[isct.tex_offs_y];
         isct = intersect_with_metadata(isct, meta);
         if (isct.size_x <= 0)
             return;
@@ -248,7 +248,12 @@ static void mode4_render_sprite(int16_t scanline, int16_t width, uint16_t *rgb, 
             byte_size += px_size * sizeof(uint32_t);
         if (byte_size > 0x10000)
             continue;
-        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size)
+        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size
+#if PICO_RP2040
+            /* Pico 1 port: Cortex-M0+ faults on unaligned halfword loads. */
+            && !(sprites[i].xram_sprite_ptr & 1)
+#endif
+        )
         {
             const void *img = (void *)&xram[sprites[i].xram_sprite_ptr];
             sprite_scanline16(rgb, &sprites[i], img, scanline, width);
@@ -444,7 +449,12 @@ static void mode4_render_asprite(
             byte_size += px_size * sizeof(uint32_t);
         if (byte_size > 0x10000)
             continue;
-        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size)
+        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size
+#if PICO_RP2040
+            /* Pico 1 port: Cortex-M0+ faults on unaligned halfword loads. */
+            && !(sprites[i].xram_sprite_ptr & 1)
+#endif
+        )
         {
             const void *img = (void *)&xram[sprites[i].xram_sprite_ptr];
             asprite_scanline16(rgb, &sprites[i], img, scanline, width);
