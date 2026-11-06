@@ -619,17 +619,20 @@ static void __in_flash("ria_write_pio_init") ria_write_pio_init(void)
         1,
         false);
 
-    // DMA move address from PIO into the data DMA config
+    // DMA move address from PIO into the data DMA config. Writing it
+    // through the trigger alias starts the data channel with it; on the
+    // RP2040 a write_addr update followed by CHAIN_TO can start the data
+    // channel with the previous address.
     dma_channel_config addr_dma = dma_channel_get_default_config(addr_chan);
     channel_config_set_high_priority(&addr_dma, true);
     channel_config_set_dreq(&addr_dma, pio_get_dreq(RIA_WRITE_PIO, RIA_WRITE_SM, false));
     channel_config_set_read_increment(&addr_dma, false);
-    channel_config_set_chain_to(&addr_dma, data_chan);
+    channel_config_set_chain_to(&addr_dma, addr_chan); // none, see above
     dma_channel_configure(
         addr_chan,
         &addr_dma,
-        &dma_channel_hw_addr(data_chan)->write_addr, // dst
-        &RIA_WRITE_PIO->rxf[RIA_WRITE_SM],           // src
+        &dma_channel_hw_addr(data_chan)->al2_write_addr_trig, // dst
+        &RIA_WRITE_PIO->rxf[RIA_WRITE_SM],                    // src
         1,
         true);
 }
@@ -669,17 +672,18 @@ static void __in_flash("ria_read_pio_init") ria_read_pio_init(void)
         1,
         false);
 
-    // DMA move address from PIO into the data DMA config
+    // DMA move address from PIO into the data DMA config, starting the data
+    // channel through the trigger alias (see ria_write_pio_init).
     dma_channel_config addr_dma = dma_channel_get_default_config(addr_chan);
     channel_config_set_high_priority(&addr_dma, true);
     channel_config_set_dreq(&addr_dma, pio_get_dreq(RIA_READ_PIO, RIA_READ_SM, false));
     channel_config_set_read_increment(&addr_dma, false);
-    channel_config_set_chain_to(&addr_dma, data_chan);
+    channel_config_set_chain_to(&addr_dma, addr_chan); // none, see above
     dma_channel_configure(
         addr_chan,
         &addr_dma,
-        &dma_channel_hw_addr(data_chan)->read_addr, // dst
-        &RIA_READ_PIO->rxf[RIA_READ_SM],            // src
+        &dma_channel_hw_addr(data_chan)->al3_read_addr_trig, // dst
+        &RIA_READ_PIO->rxf[RIA_READ_SM],                     // src
         1,
         true);
 }

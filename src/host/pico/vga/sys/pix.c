@@ -107,7 +107,7 @@ static void pix_rx_sm_init(uint sm, uint offset, uint32_t channel_id)
 
 void pix_init(void)
 {
-    static volatile uint8_t dma_fifo[4];
+    static volatile uint8_t dma_fifo[4] __attribute__((aligned(4)));
     static volatile uint32_t dma_addr;
 
     // Connect GPIO fabric
@@ -144,16 +144,20 @@ void pix_init(void)
         1,
         false);
 
-    // DMA move the constructed pointer to the next DMA destination
+    // DMA move the constructed pointer to the next DMA destination. Writing
+    // it through the trigger alias starts the data channel with it. On the
+    // RP2040, a write_addr update followed by CHAIN_TO can start the data
+    // channel with the previous address, which put about one XRAM byte in
+    // 500 at the address before its own.
     dma_channel_config addr_dma = dma_channel_get_default_config(addr_chan);
     channel_config_set_high_priority(&addr_dma, true);
     channel_config_set_read_increment(&addr_dma, false);
-    channel_config_set_chain_to(&addr_dma, data_chan);
+    channel_config_set_chain_to(&addr_dma, addr_chan); // none, see above
     dma_channel_configure(
         addr_chan,
         &addr_dma,
-        &dma_channel_hw_addr(data_chan)->write_addr, // dst
-        &dma_addr,                                   // src
+        &dma_channel_hw_addr(data_chan)->al2_write_addr_trig, // dst
+        &dma_addr,                                            // src
         1,
         false);
 
