@@ -2870,7 +2870,9 @@ static term_state_t *term_visible(void)
     return vga_canvas_width() == 320 ? &term_40 : &term_80;
 }
 
-void term_view(term_view_t *out)
+/* HOST_NOT_IN_FLASH: mode0 calls these on the render core, which keeps
+ * running while flash is erased (needed by the Pico 1 port). */
+void HOST_NOT_IN_FLASH("term_view") term_view(term_view_t *out)
 {
     term_state_t *term = term_visible();
     out->width = term->width;
@@ -2884,7 +2886,7 @@ void term_view(term_view_t *out)
     out->blink_phase = term->cell_blink_phase;
 }
 
-const term_data_t *term_view_row(uint8_t y)
+const term_data_t *HOST_NOT_IN_FLASH("term_view_row") term_view_row(uint8_t y)
 {
     return term_row_ptr(term_visible(), y);
 }

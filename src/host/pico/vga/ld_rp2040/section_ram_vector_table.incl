@@ -1,0 +1,27 @@
+/* Pico 1 port: overrides the SDK's section_ram_vector_table.incl for the
+ * RP2040 VGA build. The PIX DMA chain needs xram on a 64 KB boundary
+ * (machine.h XRAM_ALIGN). Left to the default layout it lands at 0x20010000
+ * behind ~56 KB of alignment padding, which the RP2040's 264 KB cannot spare.
+ * The start of RAM is already 64 KB aligned, so xram goes first, for free. */
+SECTIONS
+{
+    .xram (NOLOAD): {
+        . = ALIGN(0x10000);
+        KEEP(*(.uninitialized_data.xram_blocks))
+    } > RAM
+
+    .ram_vector_table (NOLOAD): {
+        *(.ram_vector_table)
+    } > RAM
+
+    /* The 4 KB scratch banks each hold only a 2 KB stack. Two runtime-filled
+     * 2 KB fonts live in the spare halves; .stack*_dummy that follow in the
+     * same regions make the link fail if they ever stop fitting. */
+    .font_scratch_x (NOLOAD): {
+        KEEP(*(.uninitialized_data.font8))
+    } > SCRATCH_X
+
+    .font_scratch_y (NOLOAD): {
+        KEEP(*(.uninitialized_data.italic16))
+    } > SCRATCH_Y
+}

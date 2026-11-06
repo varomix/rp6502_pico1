@@ -20,7 +20,12 @@
 #include "scanvideo.h"
 #include "pico/binary_info.h"
 
+#if PICO_RP2040
+/* Pico 1 port: 8 (the pico-extras default) saves 7.75 KB of RAM. */
+#define SCANVIDEO_SCANLINE_BUFFER_COUNT 8
+#else
 #define SCANVIDEO_SCANLINE_BUFFER_COUNT 10
+#endif
 #define SCANVIDEO_MAX_SCANLINE_BUFFER_WORDS 323
 #define SCANVIDEO_COLOR_PIN_BASE 6
 #define SCANVIDEO_COLOR_PIN_COUNT 16

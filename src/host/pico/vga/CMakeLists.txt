@@ -10,7 +10,35 @@ target_compile_definitions(rp6502-vga PRIVATE ${RP6502_PROJECT_DEFINITIONS}
 rp6502_log_definitions(rp6502-vga PRIVATE)
 pico_add_extra_outputs(rp6502-vga)
 pico_set_program_name(rp6502-vga "RP6502-VGA")
-pico_set_binary_type(rp6502-vga copy_to_ram)
+if(PICO_RP2040)
+    # Pico 1 port: run from flash with hot paths in RAM, and put xram at the
+    # bottom of RAM so its 64 KB alignment costs no padding.
+    pico_add_linker_script_override_path(rp6502-vga ${VGA_SRC}/ld_rp2040
+        FILES section_ram_vector_table.incl
+              default_text_excludes.incl
+              default_rodata_excludes.incl)
+    # Render code runs on core 1 during flash erase, so it must be in RAM.
+    # LTO is off for these so ld_rp2040/*_excludes.incl can match them by name.
+    set(RP6502_VGA_RAM_SOURCES
+        ${RP6502_ROOT}/src/core/vga/mode/mode0.c
+        ${RP6502_ROOT}/src/core/vga/mode/mode1.c
+        ${RP6502_ROOT}/src/core/vga/mode/mode2.c
+        ${RP6502_ROOT}/src/core/vga/mode/mode3.c
+        ${RP6502_ROOT}/src/core/vga/mode/mode4.c
+        ${RP6502_ROOT}/src/core/vga/mode/mode5.c
+        ${VGA_SRC}/sys/vga.c
+        ${RP6502_ROOT}/src/core/vga/prog.c
+        ${VGA_SRC}/sys/ria.c
+        ${RP6502_ROOT}/src/core/sys/xram.c
+        ${RP6502_ROOT}/src/core/term/color.c
+        ${PICO_SDK_PATH}/src/rp2_common/pico_atomic/atomic.c
+    )
+    set_source_files_properties(${RP6502_VGA_RAM_SOURCES}
+        TARGET_DIRECTORY rp6502-vga
+        PROPERTIES COMPILE_OPTIONS "-fno-lto")
+else()
+    pico_set_binary_type(rp6502-vga copy_to_ram)
+endif()
 
 set_target_properties(rp6502-vga PROPERTIES
     INTERPROCEDURAL_OPTIMIZATION TRUE

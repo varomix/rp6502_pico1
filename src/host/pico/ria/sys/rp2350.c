@@ -7,6 +7,7 @@
 #include "ria/sys/rp2350.h"
 #include <hardware/clocks.h>
 #include <hardware/vreg.h>
+#include <hardware/timer.h>
 
 #if PICO_RP2040
 /* Pico 1 port: the RP2040 is rated for 133 MHz. 256 MHz commonly holds at
@@ -19,5 +20,8 @@
 void rp2350_init(void)
 {
     vreg_set_voltage(SYS_RP2350_VREG);
+#if PICO_RP2040
+    busy_wait_us(1000); // let the regulator settle before 256 MHz
+#endif
     set_sys_clock_khz(SYS_RP2350_KHZ, true);
 }

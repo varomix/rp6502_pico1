@@ -24,7 +24,14 @@ rp6502_osal_pico(${RIA_TARGET})
 target_compile_definitions(${RIA_TARGET} PRIVATE ${RP6502_PROJECT_DEFINITIONS})
 rp6502_log_definitions(${RIA_TARGET} PRIVATE)
 pico_add_extra_outputs(${RIA_TARGET})
-pico_set_binary_type(${RIA_TARGET} copy_to_ram)
+if(PICO_RP2040)
+    # Pico 1 port: 264 KB can't hold the whole image, so run from flash and
+    # put the hot paths in RAM by object name (ria/ld_rp2040/*.incl).
+    pico_add_linker_script_override_path(${RIA_TARGET} ${RIA_SRC}/ld_rp2040
+        FILES default_text_excludes.incl default_rodata_excludes.incl)
+else()
+    pico_set_binary_type(${RIA_TARGET} copy_to_ram)
+endif()
 
 set_target_properties(${RIA_TARGET} PROPERTIES
     INTERPROCEDURAL_OPTIMIZATION TRUE
@@ -192,3 +199,28 @@ target_sources(${RIA_TARGET} PRIVATE
     ${RP6502_ROOT}/vendor/tinyusb_rp6502/rp2040_usb.c
     ${RP6502_ROOT}/vendor/tinyusb_rp6502/midi_host.c
 )
+
+# Pico 1 port: hot-path objects built without LTO so ria/ld_rp2040/*.incl can
+# place them in RAM by name. Kept last so no later COMPILE_OPTIONS overwrite it.
+if(PICO_RP2040)
+    set(RP6502_RIA_RAM_SOURCES
+        ${RIA_SRC}/sys/ria.c
+        ${RIA_SRC}/sys/vga.c
+        ${RIA_SRC}/sys/resb.c
+        ${RP6502_ROOT}/src/core/sys/xram.c
+        ${RIA_SRC}/aud/mix.c
+        ${RP6502_ROOT}/src/core/aud/sine.c
+        ${RP6502_ROOT}/src/core/aud/bel.c
+        ${RP6502_ROOT}/src/core/aud/bel_presets.c
+        ${RP6502_ROOT}/src/core/aud/opl.c
+        ${RP6502_ROOT}/src/core/aud/psg.c
+        ${RP6502_ROOT}/vendor/emu8950/emu8950.c
+        ${RP6502_ROOT}/vendor/tinyusb_rp6502/hcd_rp2040.c
+        ${RP6502_ROOT}/vendor/tinyusb_rp6502/rp2040_usb.c
+        ${RP6502_ROOT}/vendor/tinyusb/src/common/tusb_fifo.c
+        ${PICO_SDK_PATH}/src/rp2_common/pico_atomic/atomic.c
+    )
+    set_property(SOURCE ${RP6502_RIA_RAM_SOURCES}
+        TARGET_DIRECTORY ${RIA_TARGET}
+        APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
+endif()

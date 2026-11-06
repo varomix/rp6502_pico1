@@ -1,0 +1,3 @@
+/* Pico 1 port: read-only tables of the RAM-resident render objects must also
+ * be in RAM, because core 1 reads them while flash is being erased. */
+*(EXCLUDE_FILE(*libgcc.a: *libc.a: *lib*_a-mem*.o *libm.a: *mode0.c.o *mode1.c.o *mode2.c.o *mode3.c.o *mode4.c.o *mode5.c.o *sys/vga.c.o *vga/prog.c.o *sys/ria.c.o *sys/xram.c.o *term/color.c.o *pico_atomic/atomic.c.o) .rodata*)

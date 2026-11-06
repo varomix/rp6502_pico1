@@ -1,0 +1,6 @@
+/* Pico 1 port: the RP2040 VGA runs from flash, but core 1 keeps rendering
+ * while core 0 erases flash, and rendering must be fast. Every object here
+ * is built without LTO (see vga/CMakeLists.txt) so its file name survives to
+ * the link; excluding it from flash .text lands it in RAM via .data's
+ * catch-all *(.text*). Keep this list in step with RP6502_VGA_RAM_SOURCES. */
+*(EXCLUDE_FILE(*libgcc.a: *libc.a: *lib*_a-mem*.o *libm.a: *mode0.c.o *mode1.c.o *mode2.c.o *mode3.c.o *mode4.c.o *mode5.c.o *sys/vga.c.o *vga/prog.c.o *sys/ria.c.o *sys/xram.c.o *term/color.c.o *pico_atomic/atomic.c.o) .text*)

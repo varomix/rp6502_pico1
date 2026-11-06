@@ -7,6 +7,7 @@
  */
 
 #include "core/api/proc.h"
+#include "machine.h"
 #include "core/api/api.h"
 #include "core/api/arg.h"
 #include "core/sys/sys.h"
@@ -77,7 +78,9 @@ void proc_set_exit_code(int16_t code)
     proc_exit_code = code;
 }
 
-void proc_exit(int16_t exit_code)
+/* HOST_NOT_IN_FLASH: called from the 6502 bus core, which keeps running
+ * while flash is written (needed by the Pico 1 port). */
+void HOST_NOT_IN_FLASH("proc_exit") proc_exit(int16_t exit_code)
 {
     proc_set_exit_code(exit_code);
     sys_stop();

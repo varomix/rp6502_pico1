@@ -14,6 +14,9 @@
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
 #include <hardware/clocks.h>
+#if PICO_RP2040
+#include <hardware/vreg.h>
+#endif
 #include <string.h>
 
 #pragma GCC push_options
@@ -221,6 +224,13 @@ static void vga_scanvideo_switch(void)
     if (clk != clock_get_hz(clk_sys))
     {
         main_pre_reclock();
+#if PICO_RP2040
+        /* Pico 1 port: the RP2040 is rated for 133 MHz and VGA runs it at up
+         * to 216 MHz. 1.20 V is the usual margin for that; raise it before
+         * the clock goes up and let the regulator settle. */
+        vreg_set_voltage(VREG_VOLTAGE_1_20);
+        busy_wait_us(1000);
+#endif
         set_sys_clock_khz(clk / 1000, true);
         main_post_reclock();
     }

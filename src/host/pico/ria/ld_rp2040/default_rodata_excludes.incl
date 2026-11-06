@@ -1,0 +1,2 @@
+/* Pico 1 port: tables used by the RAM-resident objects live in RAM too. */
+*(EXCLUDE_FILE(*libgcc.a: *libc.a: *lib*_a-mem*.o *libm.a: *sys/ria.c.o *sys/vga.c.o *sys/resb.c.o *sys/xram.c.o *aud/mix.c.o *aud/sine.c.o *aud/bel.c.o *aud/bel_presets.c.o *aud/opl.c.o *aud/psg.c.o *emu8950.c.o *hcd_rp2040.c.o *rp2040_usb.c.o *tusb_fifo.c.o *pico_atomic/atomic.c.o) .rodata*)

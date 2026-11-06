@@ -16,6 +16,7 @@
  */
 
 #include "core/sys/sys.h"
+#include "machine.h"
 #include "core/wdc/resb.h"
 #include "drivers.h"
 
@@ -103,7 +104,9 @@ void sys_run(void)
         sys_state = starting;
 }
 
-void sys_stop(void)
+/* HOST_NOT_IN_FLASH: the 6502 bus core reaches this through proc_exit, and
+ * it keeps running while flash is written (needed by the Pico 1 port). */
+void HOST_NOT_IN_FLASH("sys_stop") sys_stop(void)
 {
     resb_assert();
     if (sys_state == starting)
