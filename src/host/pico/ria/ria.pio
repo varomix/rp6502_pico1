@@ -101,25 +101,25 @@ push noblock    side 0 [5]
 
 ; Handle chip select and read/write logic
 ; Pico 1 port: PIO version 0 (RP2040) has no 'mov pindirs', so the 8 data
-; pin directions are shifted out of OSR instead. One instruction and one
-; cycle longer than upstream; runs on both RP2040 and RP2350.
+; pin directions are shifted out of OSR instead. 'jmp x--' (taken when X is
+; nonzero) sends every non-read cycle to hi-z, which keeps this at 9
+; instructions: one more than upstream. Runs on both RP2040 and RP2350.
 .program ria_cs_rwb
 
-.wrap_target
+hiz:
 mov osr null
 out pindirs 8 ; hi-z data bus
+.wrap_target
 start:
 mov osr !pins
 out x 2
-jmp !x reading ; select==1 and rwb==1
-.wrap
-reading:
-jmp pin pindirs_set ; only when PHI2 high
+jmp x-- hiz ; not (select==1 and rwb==1)
+jmp pin drive ; reading, only when PHI2 high
 jmp start
-pindirs_set:
+drive:
 mov osr !null
 out pindirs 8 ; drive data bus
-jmp start
+.wrap
 
 
 ; Minimum 8N1 UART receiver.
@@ -154,7 +154,7 @@ irq 0
 ; ---------------------------------------------------------------------------
 ; Pico 1 port (RP2040) variants. The RP2040 has two PIO blocks, not three, and
 ; the CYW43 gSPI program (6 instructions, 1 SM) must fit beside the RIA. These
-; free exactly that: pio0 = cs_rwb 9 + write 13 + read 5 + rx_trap 5 = 32,
+; free exactly that: pio0 = cs_rwb 9 + write 13 + read 5 + rx_trap 5 = 32 (checked at init),
 ; pio1 = action_fixed 21 + pix_tx 5 + CYW43 6 = 32.
 ; ---------------------------------------------------------------------------
 

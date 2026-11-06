@@ -200,6 +200,13 @@ target_sources(${RIA_TARGET} PRIVATE
     ${RP6502_ROOT}/vendor/tinyusb_rp6502/midi_host.c
 )
 
+# Pico 1 port diagnostic: -DPICO1_BC_SPLIT=ON restores upstream's separate
+# backchannel receiver (pio1) and VSYNC trap (pio0). WiFi cannot load then.
+option(PICO1_BC_SPLIT "Pico 1: upstream backchannel PIO layout (no WiFi)" OFF)
+if(PICO1_BC_SPLIT)
+    target_compile_definitions(${RIA_TARGET} PRIVATE PICO1_BC_SPLIT=1)
+endif()
+
 # Pico 1 port: hot-path objects built without LTO so ria/ld_rp2040/*.incl can
 # place them in RAM by name. Kept last so no later COMPILE_OPTIONS overwrite it.
 if(PICO_RP2040)

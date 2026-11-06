@@ -18,6 +18,7 @@
 #include "ria.pio.h"
 #include <pico/stdlib.h>
 #include <hardware/clocks.h>
+#include <hardware/dma.h>
 #include <hardware/timer.h>
 #include <strings.h>
 #include <stdio.h>
@@ -51,6 +52,18 @@ static uint vga_vsync_trap_offset;
 static bool vga_vsync_alarm_arms;
 static volatile bool vga_vsync_trap_armed;
 static volatile bool vga_vsync_trap_fired;
+
+#if PICO_RP2040
+/* Pico 1 port bring-up: backchannel counters shown by STATUS. */
+static volatile uint32_t vga_dbg_poll_bytes, vga_dbg_irq_bytes, vga_dbg_irq_calls;
+static volatile uint32_t vga_dbg_trap_fires, vga_dbg_arms, vga_dbg_vsyncs;
+static volatile int vga_dbg_lost_from = -1;
+static uint vga_dbg_offset;
+static uint32_t vga_dbg_ex_init, vga_dbg_ex_conn, vga_dbg_ins_conn;
+#define VGA_DBG(x) (x)
+#else
+#define VGA_DBG(x) ((void)0)
+#endif
 
 #define VGA_VERSION_MESSAGE_SIZE 64
 static char vga_version_message[VGA_VERSION_MESSAGE_SIZE];
@@ -103,7 +116,7 @@ static void vga_vsync_trap_disarm(void)
     if (!vga_vsync_trap_armed)
         return;
     vga_vsync_trap_armed = false;
-#if PICO_RP2040
+#if PICO_RP2040 && !PICO1_BC_SPLIT
     // The trap shares its SM with the receiver: mask it, don't reset the SM.
     pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, false);
 #else
@@ -131,7 +144,8 @@ static void vga_vsync_alarm_handler(uint alarm)
     vga_vsync_trap_fired = false;
     vga_vsync_trap_armed = true;
     vga_vsync_alarm_arms = false;
-#if PICO_RP2040
+    VGA_DBG(vga_dbg_arms++);
+#if PICO_RP2040 && !PICO1_BC_SPLIT
     // Forget start bits from before the window; only the next one fires.
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
     irq_clear(VGA_VSYNC_TRAP_IRQ);
@@ -160,12 +174,13 @@ static void
     __isr
     __time_critical_func(vga_vsync_trap_irq_handler)(void)
 {
-#if PICO_RP2040
+#if PICO_RP2040 && !PICO1_BC_SPLIT
     pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, false);
 #endif
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
     vga_vsync_trap_armed = false;
     vga_vsync_trap_fired = true;
+    VGA_DBG(vga_dbg_trap_fires++);
     // The frame number written here is a guess. The backchannel byte for this
     // VSYNC arrives about 74 us later, and when its frame number differs,
     // vga_backchannel_command writes the corrected number and calls
@@ -181,6 +196,7 @@ static inline void vga_backchannel_command(uint8_t byte)
     case 0x80:
     {
         uint8_t frame = byte & 0xF;
+        VGA_DBG(vga_dbg_vsyncs++);
         vga_vsync_deadline = time_us_32() + VGA_VSYNC_WATCHDOG_MS * 1000;
         vga_vsync_reschedule();
         if (vga_vsync_trap_fired)
@@ -210,9 +226,11 @@ static void
     __isr
     __time_critical_func(vga_backchannel_irq_handler)(void)
 {
+    VGA_DBG(vga_dbg_irq_calls++);
     while (!pio_sm_is_rx_fifo_empty(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM))
     {
         uint8_t byte = pio_sm_get(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM) >> 24;
+        VGA_DBG(vga_dbg_irq_bytes++);
         if (byte & 0x80)
             vga_backchannel_command(byte);
     }
@@ -229,6 +247,8 @@ static void vga_rln_callback(bool timeout)
 
 static void vga_connect(void)
 {
+    VGA_DBG(vga_dbg_ex_conn = VGA_BACKCHANNEL_PIO->sm[VGA_BACKCHANNEL_SM].execctrl);
+    VGA_DBG(vga_dbg_ins_conn = VGA_BACKCHANNEL_PIO->sm[VGA_BACKCHANNEL_SM].instr);
     vga_backchannel_irq_disable();
     while (stdio_getchar_timeout_us(0) != PICO_ERROR_TIMEOUT)
         tight_loop_contents();
@@ -260,6 +280,7 @@ static void vga_connect(void)
         if (!pio_sm_is_rx_fifo_empty(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM))
         {
             uint8_t byte = pio_sm_get(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM) >> 24;
+            VGA_DBG(vga_dbg_poll_bytes++);
             if (byte & 0x80)
             {
                 vga_backchannel_command(byte);
@@ -304,11 +325,18 @@ void __in_flash("vga_init") vga_init(void)
     pio_sm_set_consecutive_pindirs(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM,
                                    VGA_BACKCHANNEL_PIN, 1, false);
     gpio_pull_up(VGA_BACKCHANNEL_PIN);
-#if PICO_RP2040
+#if PICO_RP2040 && !PICO1_BC_SPLIT
     pio_sm_claim(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM); // keep it from CYW43
-    uint offset = pio_add_program(VGA_BACKCHANNEL_PIO, &vga_backchannel_rx_trap_program);
+    int add = pio_add_program(VGA_BACKCHANNEL_PIO, &vga_backchannel_rx_trap_program);
+    if (add < 0) // SDK 2.x returns an error instead of panicking
+        panic("vga: no room in pio%u", pio_get_index(VGA_BACKCHANNEL_PIO));
+    uint offset = (uint)add;
     pio_sm_config c = vga_backchannel_rx_trap_program_get_default_config(offset);
 #else
+#if PICO_RP2040 // PICO1_BC_SPLIT diagnostic: upstream layout, claimed
+    pio_sm_claim(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM);
+    pio_sm_claim(VGA_VSYNC_TRAP_PIO, VGA_VSYNC_TRAP_SM);
+#endif
     uint offset = pio_add_program(VGA_BACKCHANNEL_PIO, &vga_backchannel_rx_program);
     pio_sm_config c = vga_backchannel_rx_program_get_default_config(offset);
 #endif
@@ -317,15 +345,17 @@ void __in_flash("vga_init") vga_init(void)
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
     float div = (float)clock_get_hz(clk_sys) / (8 * VGA_BACKCHANNEL_BAUDRATE);
     sm_config_set_clkdiv(&c, div);
+    VGA_DBG(vga_dbg_offset = offset);
     pio_sm_init(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM, offset, &c);
     pio_sm_set_enabled(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM, true);
+    VGA_DBG(vga_dbg_ex_init = VGA_BACKCHANNEL_PIO->sm[VGA_BACKCHANNEL_SM].execctrl);
 
     // Set up PIO IRQ for backchannel RX, source stays disabled until connect
     irq_set_exclusive_handler(VGA_BACKCHANNEL_IRQ, vga_backchannel_irq_handler);
     irq_set_priority(VGA_BACKCHANNEL_IRQ, PICO_DEFAULT_IRQ_PRIORITY - 0x10);
     irq_set_enabled(VGA_BACKCHANNEL_IRQ, true);
 
-#if PICO_RP2040
+#if PICO_RP2040 && !PICO1_BC_SPLIT
     // The trap is the receiver's IRQ flag 0, masked until armed.
     (void)vga_vsync_trap_offset;
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
@@ -361,6 +391,7 @@ void vga_task(void)
     if ((vga_state == VGA_CONNECTED || vga_state == VGA_NO_VERSION) &&
         (int32_t)(time_us_32() - vga_vsync_deadline) >= 0)
     {
+        VGA_DBG(vga_dbg_lost_from = vga_state);
         vga_backchannel_irq_disable();
         vga_vsync_alarm_arms = false;
         if (vga_vsync_alarm >= 0)
@@ -440,7 +471,9 @@ int vga_boot_response(char *buf, size_t buf_size, int state, unsigned width)
 
 int vga_status_response(char *buf, size_t buf_size, int state, unsigned)
 {
+#if !PICO_RP2040
     (void)state;
+#endif
     const char *msg = STR_VGA_SEARCHING;
     switch (vga_state)
     {
@@ -460,8 +493,59 @@ int vga_status_response(char *buf, size_t buf_size, int state, unsigned)
         msg = STR_VGA_CONNECTION_LOST;
         break;
     }
+#if PICO_RP2040
+    PIO p = VGA_BACKCHANNEL_PIO;
+    uint sm = VGA_BACKCHANNEL_SM;
+    switch (state)
+    {
+    case 0:
+        snprintf(buf, buf_size, "%s\n", msg);
+        return 1;
+    case 1:
+        snprintf(buf, buf_size, "BC st=%d lost=%d poll=%lu irqc=%lu irqb=%lu vs=%lu arm=%lu trap=%lu\n",
+                 (int)vga_state, vga_dbg_lost_from,
+                 (unsigned long)vga_dbg_poll_bytes, (unsigned long)vga_dbg_irq_calls,
+                 (unsigned long)vga_dbg_irq_bytes, (unsigned long)vga_dbg_vsyncs,
+                 (unsigned long)vga_dbg_arms, (unsigned long)vga_dbg_trap_fires);
+        return 2;
+    default:
+        snprintf(buf, buf_size, "BC pio%d sm%u pc=%u rx=%u pin=%d fn=%d f=%lx ie0=%lx ie1=%lx ir=%lx en=%lx nv=%d\n",
+                 (int)pio_get_index(p), sm, (unsigned)pio_sm_get_pc(p, sm),
+                 (unsigned)pio_sm_get_rx_fifo_level(p, sm),
+                 (int)gpio_get(VGA_BACKCHANNEL_PIN), (int)gpio_get_function(VGA_BACKCHANNEL_PIN),
+                 (unsigned long)p->irq, (unsigned long)p->inte0, (unsigned long)p->inte1,
+                 (unsigned long)p->intr, (unsigned long)(p->ctrl & 0xF),
+                 (int)irq_is_enabled(VGA_BACKCHANNEL_IRQ));
+        return 3;
+    case 3:
+        snprintf(buf, buf_size, "BC ins=%lx dv=%lx ex=%lx pc=%lx sh=%lx fd=%lx by=%lx oe=%lx ck=%lu\n",
+                 (unsigned long)p->sm[sm].instr, (unsigned long)p->sm[sm].clkdiv,
+                 (unsigned long)p->sm[sm].execctrl, (unsigned long)p->sm[sm].pinctrl,
+                 (unsigned long)p->sm[sm].shiftctrl, (unsigned long)p->fdebug,
+                 (unsigned long)p->input_sync_bypass, (unsigned long)((p->dbg_padoe >> VGA_BACKCHANNEL_PIN) & 1),
+                 (unsigned long)clock_get_hz(clk_sys));
+        return 4;
+    case 4:
+        snprintf(buf, buf_size, "BC exi=%08lx exc=%08lx insc=%04lx off=%u\n",
+                 (unsigned long)vga_dbg_ex_init, (unsigned long)vga_dbg_ex_conn,
+                 (unsigned long)vga_dbg_ins_conn, (unsigned)vga_dbg_offset);
+        return 5;
+    case 5:
+    case 6:
+    {
+        int n = snprintf(buf, buf_size, "DMA%c", state == 5 ? 'w' : 'r');
+        for (uint ch = 0; ch < 12 && n < (int)buf_size - 10; ch++)
+            n += snprintf(buf + n, buf_size - n, " %lx",
+                          (unsigned long)(state == 5 ? dma_hw->ch[ch].write_addr
+                                                     : dma_hw->ch[ch].read_addr));
+        snprintf(buf + n, buf_size - n, "\n");
+        return state == 5 ? 6 : -1;
+    }
+    }
+#else
     snprintf(buf, buf_size, "%s\n", msg);
     return -1;
+#endif
 }
 
 bool vga_check_display_type(uint8_t *v)
