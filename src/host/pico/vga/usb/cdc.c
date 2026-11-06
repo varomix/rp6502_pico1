@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#include <pico.h>
 #include <tusb.h>
+#include <pico/bootrom.h>
 #include "vga/sys/com.h"
 #include "vga/usb/cdc.h"
 #include "vga/sys/cap.h"
@@ -36,6 +38,18 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     else
         cdc_mark_not_ready();
 }
+
+#if PICO_RP2040
+/* Pico 1 port development aid: opening the console at 1200 baud reboots the
+ * VGA into BOOTSEL, so a host can copy a UF2 to it without the button
+ * (the convention of the Pico SDK's stdio_usb). */
+void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
+{
+    (void)itf;
+    if (p_line_coding->bit_rate == 1200)
+        reset_usb_boot(0, 0);
+}
+#endif
 
 void tud_umount_cb(void)
 {

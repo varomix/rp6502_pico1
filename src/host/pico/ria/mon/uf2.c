@@ -16,6 +16,9 @@
 #include "ria/sys/mbuf.h"
 #include "ria/sys/pix.h"
 #include "ria/sys/vga.h"
+#include "core/sys/xram.h"
+#include "osal/pico/lfs.h"
+#include "xip_update.h"
 #include <boot/uf2.h>
 #include <fatfs/ff.h>
 #include <hardware/flash.h>
@@ -69,6 +72,11 @@ static uint32_t uf2_page_idx;
 static uint32_t uf2_page_count;
 static int uf2_last_percent;
 static bool uf2_to_vga;
+#ifdef XIP_UPDATE
+// For each destination sector, the flash sector its staged copy goes to.
+static uint16_t uf2_stage_map[XIP_UPDATE_MAX_SECTORS];
+static uint32_t uf2_stage_count;
+#endif
 
 #define UF2_BLOCK ((const struct uf2_block *)mbuf)
 #define UF2_PAGE (mbuf + 512)
@@ -343,6 +351,48 @@ static void uf2_do_validate(void)
         uf2_state = UF2_IDENTIFY;
 }
 
+#ifdef XIP_UPDATE
+// This build executes from flash, so the image is staged where neither the
+// running image nor the filesystem's data is: the gap between the images and
+// the filesystem, then the filesystem's free blocks. Nothing writes the
+// filesystem between here and the reboot that ends the update.
+static bool uf2_stage_plan(void)
+{
+    extern char __flash_binary_end;
+    const uint32_t lfs_first = lfs_flash_first_sector();
+    uf2_stage_count = (uf2_high_addr + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
+    if (uf2_stage_count > lfs_first || uf2_stage_count > XIP_UPDATE_MAX_SECTORS)
+    {
+        RP6502_LOG(uf2, WARN, "image reaches 0x%08lX, filesystem starts at 0x%08lX",
+                   (unsigned long)uf2_high_addr, (unsigned long)lfs_first * FLASH_SECTOR_SIZE);
+        uf2_invalid();
+        return false;
+    }
+    uint32_t running = ((uintptr_t)&__flash_binary_end - XIP_BASE + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
+    uint32_t sector = running > uf2_stage_count ? running : uf2_stage_count;
+    uint32_t n = 0;
+    while (n < uf2_stage_count && sector < lfs_first)
+        uf2_stage_map[n++] = (uint16_t)sector++;
+    const uint32_t in_gap = n;
+    if (n < uf2_stage_count)
+    {
+        int got = lfs_free_flash_sectors(uf2_stage_map + n, (int)(uf2_stage_count - n));
+        if (got > 0)
+            n += (uint32_t)got;
+    }
+    RP6502_LOG(uf2, INFO, "staging %lu sectors: %lu in the gap, %lu in free filesystem blocks",
+               (unsigned long)uf2_stage_count, (unsigned long)in_gap, (unsigned long)(n - in_gap));
+    if (n < uf2_stage_count)
+    {
+        uf2_close();
+        mon_add_response_utf8(S(STR_ERR_NO_SPACE_ON_DEVICE));
+        return false;
+    }
+    xip_update_begin(uf2_stage_map, 0);
+    return true;
+}
+#endif
+
 static void uf2_do_identify(void)
 {
     const char *name = uf2_find_program_name();
@@ -388,6 +438,11 @@ static void uf2_do_identify(void)
         uf2_invalid();
         return;
     }
+
+#ifdef XIP_UPDATE
+    if (!uf2_to_vga && !uf2_stage_plan())
+        return;
+#endif
 
     if (uf2_to_vga && !vga_connected())
     {
@@ -451,6 +506,9 @@ static void uf2_do_write(void)
     {
         uf2_build_page(uf2_page_idx);
         uint32_t offs = uf2_page_idx * FLASH_PAGE_SIZE;
+#ifdef XIP_UPDATE
+        if (!xip_update_page(offs, UF2_PAGE))
+#else
         const uint8_t *dest = (const uint8_t *)(XIP_NOCACHE_NOALLOC_BASE + offs);
         for (uint32_t i = 0; i < FLASH_PAGE_SIZE; i++)
             if (dest[i] != 0xFF)
@@ -460,6 +518,7 @@ static void uf2_do_write(void)
             }
         flash_range_program(offs, UF2_PAGE, FLASH_PAGE_SIZE);
         if (memcmp(dest, UF2_PAGE, FLASH_PAGE_SIZE))
+#endif
         {
             RP6502_LOG(uf2, ERROR, "page 0x%08lX did not take", (unsigned long)offs);
             uf2_state = UF2_FAILED;
@@ -543,12 +602,24 @@ void uf2_task(void)
         break;
     case UF2_REBOOT:
         stdio_flush();
+#ifdef XIP_UPDATE
+        uf2_close();
+        xip_update_fill(uf2_stage_count);
+        busy_wait_ms(20); // let the console drain
+        xip_update_commit((void *)xram);
+#else
         watchdog_reboot(0, 0, 0);
+#endif
         break;
     case UF2_FAILED:
         com_printf_utf8(STR_UF2_FLASH_FAILED);
         stdio_flush();
+#ifdef XIP_UPDATE
+        // Only the staging copy was written; the running image is intact.
+        uf2_close();
+#else
         reset_usb_boot(0, 0);
+#endif
         break;
     case UF2_VGA_WRITE:
         uf2_do_vga_write();

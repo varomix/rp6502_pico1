@@ -79,7 +79,7 @@ static bool pix_ch15_xreg(uint8_t index, uint16_t word)
         return false;
     case 0x06: // REBOOT_OR_LOCKUP
         if (word == 0)
-            watchdog_reboot(0, 0, 0);
+            flash_reboot();
         for (;;)
             tight_loop_contents();
     case 0x07: // FLASH_PROGRAM

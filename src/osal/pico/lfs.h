@@ -29,6 +29,14 @@ extern int lfs_mount_error;
 
 void lfs_init(void);
 
+// First flash sector of the volume, which runs to the end of flash.
+uint32_t lfs_flash_first_sector(void);
+
+/* Flash sectors of the volume's blocks that hold nothing, up to max of them,
+ * for staging a firmware update that reboots before the volume is written
+ * again. Returns how many, or a negative lfs error. */
+int lfs_free_flash_sectors(uint16_t *out, int max);
+
 // Returns 1 at end of file, 0 if not, or -1 on error.
 int lfs_eof(lfs_t *lfs, lfs_file_t *file);
 

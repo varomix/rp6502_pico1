@@ -7,6 +7,7 @@
 #include "core/api/api.h"
 #include "osal/pico/lfs.h"
 
+#include <hardware/sync.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -38,18 +39,32 @@ static int lfs_read(const struct lfs_config *c, lfs_block_t block,
     return LFS_ERR_OK;
 }
 
+/* A build that executes from flash (the RP2040 builds) must not take an
+ * interrupt while flash is busy, because the handler may be in flash. */
+#if !PICO_COPY_TO_RAM
+#define LFS_FLASH_BUSY_BEGIN() uint32_t lfs_irq_save = save_and_disable_interrupts()
+#define LFS_FLASH_BUSY_END() restore_interrupts(lfs_irq_save)
+#else
+#define LFS_FLASH_BUSY_BEGIN()
+#define LFS_FLASH_BUSY_END()
+#endif
+
 static int __no_inline_not_in_flash_func(lfs_prog)(const struct lfs_config *c, lfs_block_t block,
                                                    lfs_off_t off, const void *buffer, lfs_size_t size)
 {
     (void)(c);
+    LFS_FLASH_BUSY_BEGIN();
     flash_range_program(lfs_flash_offs(block) + off, buffer, size);
+    LFS_FLASH_BUSY_END();
     return LFS_ERR_OK;
 }
 
 static int __no_inline_not_in_flash_func(lfs_erase)(const struct lfs_config *c, lfs_block_t block)
 {
     (void)(c);
+    LFS_FLASH_BUSY_BEGIN();
     flash_range_erase(lfs_flash_offs(block), FLASH_SECTOR_SIZE);
+    LFS_FLASH_BUSY_END();
     return LFS_ERR_OK;
 }
 
@@ -90,6 +105,32 @@ void __in_flash("lfs_init") lfs_init(void)
             err = lfs_mount(&lfs_volume, &cfg);
     }
     lfs_mount_error = err;
+}
+
+uint32_t lfs_flash_first_sector(void)
+{
+    return lfs_flash_offs(0) / FLASH_SECTOR_SIZE;
+}
+
+static int lfs_mark_used(void *data, lfs_block_t block)
+{
+    uint8_t *used = data;
+    if (block < LFS_DISK_BLOCKS)
+        used[block / 8] |= 1u << (block % 8);
+    return LFS_ERR_OK;
+}
+
+int lfs_free_flash_sectors(uint16_t *out, int max)
+{
+    uint8_t used[LFS_DISK_BLOCKS / 8] = {0};
+    int err = lfs_fs_traverse(&lfs_volume, lfs_mark_used, used);
+    if (err < 0)
+        return err;
+    int n = 0;
+    for (lfs_block_t b = 0; b < LFS_DISK_BLOCKS && n < max; b++)
+        if (!(used[b / 8] & (1u << (b % 8))))
+            out[n++] = (uint16_t)(lfs_flash_offs(b) / FLASH_SECTOR_SIZE);
+    return n;
 }
 
 int lfs_eof(lfs_t *lfs, lfs_file_t *file)

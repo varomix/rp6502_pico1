@@ -79,6 +79,7 @@ target_sources(rp6502-vga PRIVATE
     ${VGA_SRC}/sys/com.c
     ${VGA_SRC}/sys/cap.c
     ${VGA_SRC}/sys/flash.c
+    ${RP6502_ROOT}/src/host/pico/xip_update.c
     ${VGA_SRC}/sys/led.c
     ${RP6502_ROOT}/src/core/sys/xram.c
     ${VGA_SRC}/sys/pix.c

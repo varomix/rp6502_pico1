@@ -124,6 +124,7 @@ target_sources(${RIA_TARGET} PRIVATE
     ${RIA_SRC}/mon/set.c
     ${RIA_SRC}/mon/status.c
     ${RIA_SRC}/mon/uf2.c
+    ${RP6502_ROOT}/src/host/pico/xip_update.c
     ${RP6502_ROOT}/src/core/str/rln.c
     ${RP6502_ROOT}/src/core/str/str.c
     ${RP6502_ROOT}/src/core/sys/config.c
