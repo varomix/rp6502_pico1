@@ -40,14 +40,17 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 }
 
 #if PICO_RP2040
-/* Pico 1 port development aid: opening the console at 1200 baud reboots the
- * VGA into BOOTSEL, so a host can copy a UF2 to it without the button
- * (the convention of the Pico SDK's stdio_usb). */
+/* Pico 1 port development aids, out of band in the line coding so they never
+ * collide with console data: 1200 baud reboots into BOOTSEL (the convention
+ * of the Pico SDK's stdio_usb), and see cap.h for the capture commands. */
 void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *p_line_coding)
 {
     (void)itf;
     if (p_line_coding->bit_rate == 1200)
         reset_usb_boot(0, 0);
+#ifdef VGA_CAP
+    cap_line_coding(p_line_coding->bit_rate);
+#endif
 }
 #endif
 
@@ -100,10 +103,7 @@ void cdc_task(void)
         {
             size_t data_len = tud_cdc_read(read_buf, bufsize);
             for (size_t i = 0; i < data_len; i++)
-#ifdef VGA_CAP
-                if (!cap_filter_in(read_buf[i]))
-#endif
-                    com_in_write(read_buf[i]);
+                com_in_write(read_buf[i]);
         }
     }
 

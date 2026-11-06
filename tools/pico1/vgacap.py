@@ -66,7 +66,14 @@ class Port:
         self.buf = bytearray()
 
     def send(self, cmd, arg=0):
-        os.write(self.fd, b"\x1d\x1dC" + cmd + struct.pack("<H", arg))
+        # Out of band: the command rides in the CDC line coding bit rate
+        # (macOS IOSSIOSPEED sets any rate), then the rate goes back to a
+        # plain one so the same command can be sent again.
+        import fcntl
+        IOSSIOSPEED = 0x80085402
+        for rate in (0x5A000000 | cmd[0] << 16 | arg, 115200):
+            fcntl.ioctl(self.fd, IOSSIOSPEED, struct.pack("L", rate))
+            time.sleep(0.02)
 
     def fill(self, timeout):
         r, _, _ = select.select([self.fd], [], [], timeout)

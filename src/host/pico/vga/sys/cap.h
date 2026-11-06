@@ -9,7 +9,8 @@
 
 /* Pico 1 port debug: scanline capture over the USB console.
  *
- * The host sends 0x1D 0x1D 'C' <cmd> <arg lo> <arg hi> on the CDC:
+ * The host sends a command by setting the CDC line coding to the bit rate
+ * 0x5A000000 | cmd << 16 | arg, out of band of the console data:
  *   '0'       stop
  *   'S' n     sweep: capture a line, then the line n further on (mod height)
  *   'L' y     capture canvas line y in every frame it can
@@ -47,8 +48,10 @@ extern volatile int16_t cap_line;
 void cap_store(uint16_t frame, int16_t line, uint16_t width, uint16_t height,
                uint16_t *const planes[], const bool filled[]);
 
-// Host command byte filter. True if the byte was taken by the filter.
-bool cap_filter_in(uint8_t ch);
+#define CAP_RATE_TAG 0x5A
+
+// The CDC line coding changed; bit rates tagged CAP_RATE_TAG are commands.
+void cap_line_coding(uint32_t bit_rate);
 
 // Core 0. True while a packet is going out, so console output waits.
 bool cap_task(void);

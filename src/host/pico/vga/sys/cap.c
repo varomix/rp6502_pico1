@@ -82,35 +82,10 @@ static void cap_command(uint8_t cmd, uint16_t arg)
     }
 }
 
-bool cap_filter_in(uint8_t ch)
+void cap_line_coding(uint32_t bit_rate)
 {
-    static const uint8_t prefix[3] = {0x1D, 0x1D, 'C'};
-    static uint8_t held[6];
-    static uint8_t n;
-    if (n < sizeof(prefix))
-    {
-        if (ch == prefix[n])
-        {
-            held[n++] = ch;
-            return true;
-        }
-        for (uint8_t i = 0; i < n; i++)
-            com_in_write(held[i]);
-        n = 0;
-        if (ch == prefix[0])
-        {
-            held[n++] = ch;
-            return true;
-        }
-        return false;
-    }
-    held[n++] = ch;
-    if (n == sizeof(held))
-    {
-        cap_command(held[3], held[4] | (held[5] << 8));
-        n = 0;
-    }
-    return true;
+    if ((bit_rate >> 24) == CAP_RATE_TAG)
+        cap_command((uint8_t)(bit_rate >> 16), (uint16_t)bit_rate);
 }
 
 static const uint8_t *cap_byte_ptr(uint32_t pos, uint32_t *avail)
