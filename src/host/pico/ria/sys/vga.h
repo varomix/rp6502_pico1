@@ -18,17 +18,33 @@
 
 #define VGA_BACKCHANNEL_PIN COM_UART_TX_PIN
 #define VGA_BACKCHANNEL_BAUDRATE 115200
+#if PICO_RP2040
+/* Pico 1 port: the receiver and the VSYNC trap are one program,
+ * vga_backchannel_rx_trap, in pio0's last SM, so that pio1 has room for the
+ * CYW43 gSPI program. Receiver bytes use PIO0_IRQ_0; the trap is PIO IRQ
+ * flag 0 routed to PIO0_IRQ_1, enabled only while armed. */
+#define VGA_BACKCHANNEL_PIO pio0
+#define VGA_BACKCHANNEL_SM 3
+#define VGA_BACKCHANNEL_IRQ PIO0_IRQ_0
+#define VGA_VSYNC_TRAP_PIO pio0
+#define VGA_VSYNC_TRAP_SM 3
+#define VGA_VSYNC_TRAP_IRQ PIO0_IRQ_1
+#else
 #define VGA_BACKCHANNEL_PIO pio1
 #define VGA_BACKCHANNEL_SM 2
+#define VGA_BACKCHANNEL_IRQ PIO1_IRQ_0
+#endif
 
 // The VSYNC trap is a PIO program that, once armed, raises an interrupt at the
 // next high-to-low edge on the backchannel pin. It is not on pio1 with the
 // receiver above, because pio1 has no instruction memory left. A PIO reads a
 // GPIO input whatever the pin's function select is, so the trap waits on the
 // same pin as the receiver.
+#if !PICO_RP2040
 #define VGA_VSYNC_TRAP_PIO pio0
 #define VGA_VSYNC_TRAP_SM 3
 #define VGA_VSYNC_TRAP_IRQ PIO0_IRQ_0
+#endif
 
 // The trap is armed at VGA_VSYNC_WINDOW_US before the expected VSYNC and
 // disarmed at the same time after it, unless it fires first. Until the VGA

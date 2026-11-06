@@ -36,6 +36,9 @@ void pix_reclock(uint16_t clkdiv_int, uint8_t clkdiv_frac)
 
 void __in_flash("pix_init") pix_init(void)
 {
+#if PICO_RP2040
+    pio_sm_claim(PIX_PIO, PIX_SM); // Pico 1 port: keep it from the CYW43 driver
+#endif
     uint offset = pio_add_program(PIX_PIO, &pix_tx_program);
     pio_sm_config config = pix_tx_program_get_default_config(offset);
     sm_config_set_out_pins(&config, PIX_PIN_BASE, PIX_PIN_COUNT);

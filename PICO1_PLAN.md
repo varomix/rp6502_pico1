@@ -49,23 +49,23 @@ Each phase ends with something flashable and tested on real hardware.
 
 ## 3. Phases
 
-### Phase 0 — Toolchain & baseline  ✅/⏳
-- [ ] ARM GNU 15.2.Rel1 + Pico SDK 2.3.0 in `~/.pico-sdk` (matches CMakeLists).
-- [ ] Build upstream for `pico2_w` unmodified; record `.elf` sizes as baseline.
-- [ ] Build script `tools/pico1/build.sh <board>` for repeatable builds.
+### Phase 0 — Toolchain & baseline  ✅
+- [x] ARM GNU 15.2.Rel1 + Pico SDK 2.3.0 in `~/.pico-sdk` (matches CMakeLists).
+- [x] Build upstream for `pico2_w` unmodified: RIA-W 478.5 KB RAM, VGA 379.5 KB RAM.
+- [x] `tools/pico1/build.sh <board>` builds + runs the flash-safety check.
 
-### Phase 1 — Build plumbing (compiles for `pico` / `pico_w`)
-- [ ] `src/host/pico/CMakeLists.txt`: accept `pico` → `ria`, `pico_w` → `ria-w`.
-- [ ] `sys/rp2350.{c,h}`: introduce `SYS_KHZ` per chip
+### Phase 1 — Build plumbing (compiles for `pico` / `pico_w`)  ✅
+- [x] `src/host/pico/CMakeLists.txt`: accept `pico` → `ria`, `pico_w` → `ria-w`.
+- [x] `sys/rp2350.{c,h}`: introduce `SYS_KHZ` per chip
       (RP2350: 256000 @1.15 V; RP2040: 256000 @1.20–1.30 V, tunable).
       Keep `SYS_RP2350_KHZ` as an alias so upstream merges stay small, or
       rename everywhere (`phi2.c`, `aud/mix.c`, `ria-w/net/cyw.c`).
-- [ ] RP2040 flash clock: at 256 MHz the QSPI must be divided by ≥3
+- [x] RP2040 flash clock: at 256 MHz the QSPI must be divided by ≥3
       (`PICO_FLASH_SPI_CLKDIV=4`) so `__in_flash` code and XIP stay reliable.
-- [ ] `ria/sys/ria.c:721`: guard `pio2->input_sync_bypass` with `NUM_PIOS > 2`.
-- [ ] `ria/mon/uf2.c:98`: accept `RP2040_FAMILY_ID` on RP2040 builds.
-- [ ] Fix any other RP2350-only SDK symbols the compiler finds.
-- [ ] Outcome: all three targets compile; record how far over RAM they are.
+- [x] `ria/sys/ria.c:721`: guard `pio2->input_sync_bypass` with `NUM_PIOS > 2`.
+- [x] `ria/mon/uf2.c:98`: accept `RP2040_FAMILY_ID` on RP2040 builds.
+- [x] Fix any other RP2350-only SDK symbols the compiler finds.
+- [x] Outcome: all three targets compile; record how far over RAM they are.
 
 ### Phase 2 — VGA on RP2040
 Least risk; VGA worked on RP2040 up to upstream v0.9.
@@ -139,6 +139,72 @@ Options, in order of preference:
 
 ---
 
-## 5. Log
+## 5. Status (2026-11-06)
 
-- 2026-11-06 — Plan written. Fork cloned, toolchain install started.
+All of Phases 1–4 are **implemented and building**; nothing has run on
+hardware yet. Next step is flashing and testing (Phase 2–4 test items).
+
+### How RAM was made to fit
+| | RP2350 build | RP2040 build | free |
+|---|---|---|---|
+| RIA-W | 478.5 KB | ~210 KB | ~54 KB |
+| RIA | — | ~139 KB | ~125 KB |
+| VGA | 379.5 KB | ~259 KB | ~5 KB |
+
+- Not `copy_to_ram` on RP2040. Hot code goes to RAM **by object file name**:
+  SDK linker-script overrides (`src/host/pico/{ria,vga}/ld_rp2040/`) exclude
+  listed objects from flash `.text`/`.rodata`, and those objects are built
+  `-fno-lto` so their names survive the link. Lists live in `ria.cmake`
+  (`RP6502_RIA_RAM_SOURCES`) and `vga/CMakeLists.txt` (`RP6502_VGA_RAM_SOURCES`)
+  — keep them in step with the `.incl` patterns.
+- A few single functions are `HOST_NOT_IN_FLASH`: `term_view`,
+  `term_view_row`, `sys_stop`, `proc_exit`.
+- VGA: xram placed first in RAM (kills ~56 KB alignment padding); compact
+  `vga_prog` rows with 1-byte renderer ids (22.5→12 KB); 8 scanline buffers
+  (was 10); `font8`/`italic16` in spare scratch X/Y halves.
+- `tools/pico1/hotpath.py` walks the call graph (incl. literal-pool
+  references to code *and* const data) from core-1 / render / IRQ roots and
+  lists anything still in flash. Core 1 and VGA render: **0 bytes in flash**.
+
+### How the PIO budget was made to fit (RIA-W)
+| Block | Programs | Instr | SMs |
+|---|---|---|---|
+| pio0 | cs_rwb 9, write 13, read 5, **rx_trap 5** | 32/32 | 4/4 |
+| pio1 | **action_fixed 21**, pix_tx 5, CYW43 gSPI 6 | 32/32 | 3/4 |
+
+- `ria_cs_rwb`: PIO v0 has no `mov pindirs` → `out pindirs 8` from OSR (+1
+  instr, +1 cycle ≈ 4 ns; shared with RP2350).
+- `vga_backchannel_rx_trap`: receiver raises IRQ flag 0 on each framed start
+  bit; the trap is that flag, masked except while armed (replaces the
+  separate `vga_vsync_trap` SM).
+- `ria_action_fixed`: variable address loaded into X once at init instead
+  of `pull noblock; mov x osr` every cycle (the RIA sets it only once).
+- RIA now `pio_sm_claim`s its fixed SMs — without this the CYW43 driver would
+  have claimed pio1 SM0 (the 6502 action SM).
+
+### Clocks
+- RIA 256 MHz @ 1.20 V (`ria/sys/rp2350.c`); QSPI flash clkdiv 4 (64 MHz).
+- VGA 148.5–216 MHz @ 1.20 V (set before reclock in `vga/sys/vga.c`).
+
+### Flashing (Pico 1 / Pico 1 W)
+- RIA on Pico 1 W: `build/pico_w/ria-w/rp6502-ria-w.uf2`
+  (fallback without radio: `build/pico/ria/rp6502-ria.uf2`)
+- VGA on any Pico 1: `build/pico/vga/rp6502-vga.uf2`
+
+### Hardware test checklist
+- [ ] VGA boots, console visible at 640×480; then each mode 1–5; 720p; SXGA
+- [ ] RIA boots to monitor over USB-serial / VGA console; `STATUS`
+- [ ] 6502 runs at 8 MHz (sys 256 MHz); if unstable try 1.25 V / 1.30 V
+      (`SYS_RP2350_VREG`) or lower PHI2
+- [ ] USB keyboard/mouse/gamepad/MSC; `LOAD` a ROM
+- [ ] Audio: PSG, OPL (watch for core-0 overload / crackle), bell
+- [ ] VSYNC (backchannel trap) — games relying on vsync run at 60 Hz
+- [ ] WiFi join, NTP, telnet modem; BLE keyboard
+- [ ] Save settings (flash write) while a program runs and video is active
+
+## 6. Log
+
+- 2026-11-06 — Plan written. Fork cloned, toolchain installed.
+- 2026-11-06 — Phase 1 plumbing; RAM fit for RIA/RIA-W/VGA; core-1 and
+  render paths verified flash-free; PIO repack for CYW43. All RP2040
+  targets build; RP2350 still builds. Awaiting hardware test.

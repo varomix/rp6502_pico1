@@ -89,13 +89,13 @@ static inline void vga_pix_backchannel_request(void)
 static inline void vga_backchannel_irq_enable(void)
 {
     pio_set_irq0_source_enabled(VGA_BACKCHANNEL_PIO,
-                                pis_sm2_rx_fifo_not_empty, true);
+                                pis_sm0_rx_fifo_not_empty + VGA_BACKCHANNEL_SM, true);
 }
 
 static inline void vga_backchannel_irq_disable(void)
 {
     pio_set_irq0_source_enabled(VGA_BACKCHANNEL_PIO,
-                                pis_sm2_rx_fifo_not_empty, false);
+                                pis_sm0_rx_fifo_not_empty + VGA_BACKCHANNEL_SM, false);
 }
 
 static void vga_vsync_trap_disarm(void)
@@ -103,9 +103,14 @@ static void vga_vsync_trap_disarm(void)
     if (!vga_vsync_trap_armed)
         return;
     vga_vsync_trap_armed = false;
+#if PICO_RP2040
+    // The trap shares its SM with the receiver: mask it, don't reset the SM.
+    pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, false);
+#else
     pio_sm_exec(VGA_VSYNC_TRAP_PIO, VGA_VSYNC_TRAP_SM,
                 pio_encode_jmp(vga_vsync_trap_offset));
     pio_sm_clear_fifos(VGA_VSYNC_TRAP_PIO, VGA_VSYNC_TRAP_SM);
+#endif
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
     // A trap interrupt that is already pending would otherwise run the handler
     // after the disarm and raise an extra VSYNC.
@@ -126,7 +131,14 @@ static void vga_vsync_alarm_handler(uint alarm)
     vga_vsync_trap_fired = false;
     vga_vsync_trap_armed = true;
     vga_vsync_alarm_arms = false;
+#if PICO_RP2040
+    // Forget start bits from before the window; only the next one fires.
+    pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
+    irq_clear(VGA_VSYNC_TRAP_IRQ);
+    pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, true);
+#else
     pio_sm_put(VGA_VSYNC_TRAP_PIO, VGA_VSYNC_TRAP_SM, 0);
+#endif
     if (hardware_alarm_set_target(alarm, from_us_since_boot(
                                              time_us_64() + 2 * VGA_VSYNC_WINDOW_US)))
         vga_vsync_trap_disarm();
@@ -148,6 +160,9 @@ static void
     __isr
     __time_critical_func(vga_vsync_trap_irq_handler)(void)
 {
+#if PICO_RP2040
+    pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, false);
+#endif
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
     vga_vsync_trap_armed = false;
     vga_vsync_trap_fired = true;
@@ -289,8 +304,14 @@ void __in_flash("vga_init") vga_init(void)
     pio_sm_set_consecutive_pindirs(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM,
                                    VGA_BACKCHANNEL_PIN, 1, false);
     gpio_pull_up(VGA_BACKCHANNEL_PIN);
+#if PICO_RP2040
+    pio_sm_claim(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM); // keep it from CYW43
+    uint offset = pio_add_program(VGA_BACKCHANNEL_PIO, &vga_backchannel_rx_trap_program);
+    pio_sm_config c = vga_backchannel_rx_trap_program_get_default_config(offset);
+#else
     uint offset = pio_add_program(VGA_BACKCHANNEL_PIO, &vga_backchannel_rx_program);
     pio_sm_config c = vga_backchannel_rx_program_get_default_config(offset);
+#endif
     sm_config_set_in_pins(&c, VGA_BACKCHANNEL_PIN); // for WAIT, IN
     sm_config_set_in_shift(&c, true, true, 8);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
@@ -300,16 +321,23 @@ void __in_flash("vga_init") vga_init(void)
     pio_sm_set_enabled(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM, true);
 
     // Set up PIO IRQ for backchannel RX, source stays disabled until connect
-    irq_set_exclusive_handler(PIO1_IRQ_0, vga_backchannel_irq_handler);
-    irq_set_priority(PIO1_IRQ_0, PICO_DEFAULT_IRQ_PRIORITY - 0x10);
-    irq_set_enabled(PIO1_IRQ_0, true);
+    irq_set_exclusive_handler(VGA_BACKCHANNEL_IRQ, vga_backchannel_irq_handler);
+    irq_set_priority(VGA_BACKCHANNEL_IRQ, PICO_DEFAULT_IRQ_PRIORITY - 0x10);
+    irq_set_enabled(VGA_BACKCHANNEL_IRQ, true);
 
+#if PICO_RP2040
+    // The trap is the receiver's IRQ flag 0, masked until armed.
+    (void)vga_vsync_trap_offset;
+    pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
+    pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, false);
+#else
     vga_vsync_trap_offset = pio_add_program(VGA_VSYNC_TRAP_PIO, &vga_vsync_trap_program);
     pio_sm_config tc = vga_vsync_trap_program_get_default_config(vga_vsync_trap_offset);
     sm_config_set_in_pins(&tc, VGA_BACKCHANNEL_PIN); // for WAIT
     pio_sm_init(VGA_VSYNC_TRAP_PIO, VGA_VSYNC_TRAP_SM, vga_vsync_trap_offset, &tc);
     pio_sm_set_enabled(VGA_VSYNC_TRAP_PIO, VGA_VSYNC_TRAP_SM, true);
     pio_set_irq0_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, true);
+#endif
     irq_set_exclusive_handler(VGA_VSYNC_TRAP_IRQ, vga_vsync_trap_irq_handler);
     irq_set_priority(VGA_VSYNC_TRAP_IRQ, PICO_DEFAULT_IRQ_PRIORITY - 0x10);
     irq_set_enabled(VGA_VSYNC_TRAP_IRQ, true);

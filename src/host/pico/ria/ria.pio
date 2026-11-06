@@ -149,3 +149,62 @@ wait 1 pin 0        ; Line idle
 wait 0 pin 0        ; Start bit
 irq 0
 .wrap
+
+
+; ---------------------------------------------------------------------------
+; Pico 1 port (RP2040) variants. The RP2040 has two PIO blocks, not three, and
+; the CYW43 gSPI program (6 instructions, 1 SM) must fit beside the RIA. These
+; free exactly that: pio0 = cs_rwb 9 + write 13 + read 5 + rx_trap 5 = 32,
+; pio1 = action_fixed 21 + pix_tx 5 + CYW43 6 = 32.
+; ---------------------------------------------------------------------------
+
+; ria_action with the variable address fixed in X at init (pio_sm_exec)
+; instead of re-pulled every cycle; the RIA only ever sets it once. Saves the
+; 'pull noblock' and 'mov x osr'. Timing after PHI2 rises is unchanged.
+.program ria_action_fixed
+
+.wrap_target
+start:
+wait 0 gpio 21
+wait 1 gpio 21 [11] ; good range 4-15
+mov osr pins
+out y 1
+jmp !y start
+out y 1
+mov isr osr
+jmp !y write
+out y 8
+out y 5
+jmp x!=y notvaraddr
+set y 0
+jmp read
+notvaraddr:
+mov osr y
+out y 2
+jmp !y read
+jmp start
+write:
+set y 1
+read:
+in isr 13
+in y 1
+in null 18
+.wrap
+
+
+; vga_backchannel_rx that also does vga_vsync_trap's job: it raises PIO IRQ
+; flag 0 on every start bit it frames, and the RIA "arms" the trap by
+; clearing that flag and enabling it as an interrupt source for the armed
+; window only. One instruction more than the receiver, one SM and three
+; instructions fewer than receiver + trap. Bit sampling is unchanged: the
+; first IN still lands 12 cycles (1.5 bits) after the start edge.
+.program vga_backchannel_rx_trap
+
+.wrap_target
+wait 0 pin 0        ; Wait for start bit
+irq 0               ; Trap: start bit seen
+set x, 7 [9]        ; Delay until eye of first data bit
+bitloop:
+in pins, 1
+jmp x-- bitloop [6]
+.wrap

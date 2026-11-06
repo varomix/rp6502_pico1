@@ -687,8 +687,15 @@ static void __in_flash("ria_read_pio_init") ria_read_pio_init(void)
 static void __in_flash("ria_act_pio_init") ria_act_pio_init(void)
 {
     // PIO to supply action loop with events
+#if PICO_RP2040
+    /* Pico 1 port: ria_action_fixed holds the variable address in X, loaded
+     * once here, to leave room in pio1 for the CYW43 gSPI program. */
+    uint offset = pio_add_program(RIA_ACT_PIO, &ria_action_fixed_program);
+    pio_sm_config config = ria_action_fixed_program_get_default_config(offset);
+#else
     uint offset = pio_add_program(RIA_ACT_PIO, &ria_action_program);
     pio_sm_config config = ria_action_program_get_default_config(offset);
+#endif
     sm_config_set_in_pins(&config, RIA_PIN_BASE);
     sm_config_set_in_shift(&config, true, true, 32);
     pio_sm_init(RIA_ACT_PIO, RIA_ACT_SM, offset, &config);
@@ -696,6 +703,10 @@ static void __in_flash("ria_act_pio_init") ria_act_pio_init(void)
     // of four or that equals the last value written to its TX FIFO, so the
     // $FFE2 offset is written there.
     pio_sm_put(RIA_ACT_PIO, RIA_ACT_SM, 0xFFE2 & 0x1F); // UART Rx
+#if PICO_RP2040
+    pio_sm_exec_wait_blocking(RIA_ACT_PIO, RIA_ACT_SM, pio_encode_pull(false, true));
+    pio_sm_exec_wait_blocking(RIA_ACT_PIO, RIA_ACT_SM, pio_encode_mov(pio_x, pio_osr));
+#endif
     pio_sm_set_enabled(RIA_ACT_PIO, RIA_ACT_SM, true);
     multicore_launch_core1(act_loop);
 }
@@ -730,6 +741,15 @@ void __in_flash("ria_init") ria_init(void)
                             BUSCTRL_BUS_PRIORITY_DMA_W_BITS;
 
     // the inits
+#if PICO_RP2040
+    /* Pico 1 port: claim the fixed SMs so the CYW43 driver's
+     * pio_claim_free_sm_and_add_program doesn't take one of them. On the
+     * RP2350 it finds pio2 first; on the RP2040 it would land on pio1 SM0. */
+    pio_sm_claim(RIA_CS_RWB_PIO, RIA_CS_RWB_SM);
+    pio_sm_claim(RIA_WRITE_PIO, RIA_WRITE_SM);
+    pio_sm_claim(RIA_READ_PIO, RIA_READ_SM);
+    pio_sm_claim(RIA_ACT_PIO, RIA_ACT_SM);
+#endif
     ria_cs_rwb_pio_init();
     ria_write_pio_init();
     ria_read_pio_init();
