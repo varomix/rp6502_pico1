@@ -718,7 +718,9 @@ void __in_flash("ria_init") ria_init(void)
         gpio_set_input_hysteresis_enabled(i, false);
         hw_set_bits(&pio0->input_sync_bypass, 1u << i);
         hw_set_bits(&pio1->input_sync_bypass, 1u << i);
+#if NUM_PIOS > 2
         hw_set_bits(&pio2->input_sync_bypass, 1u << i);
+#endif
     }
 
     /* A 6502 read is served by two chained DMA transfers that must finish

@@ -27,9 +27,11 @@ include(${RP6502_ROOT}/version.cmake)
 # If you have thoroughly tested a third-party RP2350 board in the reference
 # design then please submit a pull request.
 if(PICO_BOARD STREQUAL "pico2_w" OR
-   PICO_BOARD STREQUAL "pimoroni_pico_plus2_w_rp2350")
+   PICO_BOARD STREQUAL "pimoroni_pico_plus2_w_rp2350" OR
+   PICO_BOARD STREQUAL "pico_w")
     set(_ria ria-w)
-elseif(PICO_BOARD STREQUAL "pico2")
+elseif(PICO_BOARD STREQUAL "pico2" OR
+       PICO_BOARD STREQUAL "pico")
     set(_ria ria)
 else()
     message(FATAL_ERROR "Unknown board: ${PICO_BOARD}")

@@ -9,7 +9,7 @@
 // Force Pico 2 W to instead build for plain Pico 2.
 // This allows for easier RIA W development without swapping cmake
 // configs and prevents accidentally releasing a VGA W build.
-#ifdef RASPBERRYPI_PICO2_W
+#if defined(RASPBERRYPI_PICO2_W) || defined(RASPBERRYPI_PICO_W)
 #define PICO_DEFAULT_LED_PIN 25
 #endif
 

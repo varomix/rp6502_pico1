@@ -95,7 +95,11 @@ static bool uf2_is_ours(const struct uf2_header *h)
            h->magic_start1 == UF2_MAGIC_START1 &&
            (h->flags & UF2_FLAG_FAMILY_ID_PRESENT) &&
            !(h->flags & (UF2_FLAG_NOT_MAIN_FLASH | UF2_FLAG_FILE_CONTAINER)) &&
+#if PICO_RP2040
+           h->file_size == RP2040_FAMILY_ID;
+#else
            h->file_size == RP2350_ARM_S_FAMILY_ID;
+#endif
 }
 
 static bool uf2_read_header(uint32_t block_no, struct uf2_header *h)

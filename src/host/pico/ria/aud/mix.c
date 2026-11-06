@@ -16,6 +16,11 @@
 #include <hardware/pwm.h>
 #include <hardware/clocks.h>
 
+/* Pico 1 port: the RP2040 has a single PWM wrap IRQ. */
+#if PICO_RP2040 && !defined(PWM_IRQ_WRAP_0)
+#define PWM_IRQ_WRAP_0 PWM_IRQ_WRAP
+#endif
+
 #define AUD_L_PIN 28
 #define AUD_R_PIN 27
 #define AUD_PWM_IRQ_PIN 14 /* No IO */

@@ -33,6 +33,12 @@ set(PICO_THREAD_LOCAL_TYPE emutls CACHE INTERNAL "")
 
 include(${CMAKE_CURRENT_LIST_DIR}/pico_sdk_import.cmake)
 
+# Pico 1 (RP2040) port: the RIA runs the RP2040 at 256 MHz, and boot2's
+# default divider of 2 would clock the QSPI flash at 128 MHz. Divide by 4.
+if(PICO_BOARD STREQUAL "pico" OR PICO_BOARD STREQUAL "pico_w")
+    add_compile_definitions(PICO_FLASH_SPI_CLKDIV=4)
+endif()
+
 set(PICO_TINYUSB_PATH ${RP6502_ROOT}/vendor/tinyusb)
 
 project(rp6502-pico C CXX ASM)
