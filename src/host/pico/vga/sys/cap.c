@@ -11,6 +11,7 @@
 #include "vga/sys/com.h"
 #include "core/vga/pixel_format.h"
 #include "core/sys/xram.h"
+#include "vga/sys/flash.h"
 #include <tusb.h>
 #include <string.h>
 
@@ -67,6 +68,9 @@ static void cap_command(uint8_t cmd, uint16_t arg)
         cap_line = cmd == 'L' ? (int16_t)arg : 0;
         cap_sent = cap_total = 0;
         __atomic_store_n(&cap_state, CAP_WANT, __ATOMIC_RELEASE);
+        break;
+    case 'F': // stage XRAM[0..255] as flash page arg, as the RIA's FLASH does
+        flash_program_request(arg);
         break;
     case 'M': // XRAM blocks: arg low byte first block, high byte count
         cap_mem_next = arg & 0x3F;

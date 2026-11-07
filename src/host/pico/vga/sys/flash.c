@@ -8,6 +8,8 @@
 #include "vga/sys/flash.h"
 #include "vga/sys/ria.h"
 #include "xip_update.h"
+#include "vga/sys/com.h"
+#include <stdio.h>
 #include <hardware/watchdog.h>
 #include <hardware/flash.h>
 #include <pico.h>
@@ -50,7 +52,17 @@ void flash_task(void)
     if (!flash_page || !flash_staged)
         xip_update_begin(NULL, FLASH_STAGE_OFFS / FLASH_SECTOR_SIZE);
     flash_staged = true;
-    if (xip_update_page(offs, src))
+#if PICO_RP2040 // Pico 1 port debug: result and time on the USB console
+    uint32_t t0 = time_us_32();
+    bool ok = xip_update_page(offs, src);
+    char dbg[64];
+    int n = snprintf(dbg, sizeof dbg, "\r\n[vga flash page %u %s %luus]\r\n",
+                     flash_page, ok ? "ok" : "FAIL", (unsigned long)(time_us_32() - t0));
+    com_dbg_out(dbg, n);
+#else
+    bool ok = xip_update_page(offs, src);
+#endif
+    if (ok)
         ria_ack();
     else
         ria_nak();

@@ -10,8 +10,10 @@
 
 #include <hardware/flash.h>
 #include <hardware/structs/psm.h>
+#include <hardware/structs/ssi.h>
 #include <hardware/structs/watchdog.h>
 #include <hardware/sync.h>
+#include <pico/bootrom.h>
 #include <pico/multicore.h>
 #include <string.h>
 
@@ -71,10 +73,44 @@ void xip_update_fill(uint32_t count)
         }
 }
 
-// Runs with the old image being erased under it: RAM only, no calls but the
-// SDK flash functions, which are RAM functions themselves.
+// Runs with the old image being erased under it, so RAM and bootrom only.
+// Not even the SDK flash functions: they are RAM functions, but they call
+// hard_assert, which is in flash (and was in the 32nd sector on the first
+// hardware test, where the copy died). The bootrom functions need no boot2:
+// each staged sector is read through the bootrom's own slow XIP mode.
+// Serial 03h reads through the bootrom's XIP mode, which the flash rates to
+// 50 MHz, so the SPI clock is set to clk_sys / 8: 32 MHz at 256 MHz.
+static void __not_in_flash_func(xip_update_read_mode)(
+    rom_connect_internal_flash_fn connect, rom_flash_exit_xip_fn exit_xip,
+    rom_flash_flush_cache_fn flush_cache, rom_flash_enter_cmd_xip_fn enter_cmd_xip)
+{
+    connect();
+    exit_xip();
+    flush_cache();
+    enter_cmd_xip();
+    ssi_hw->ssienr = 0;
+    ssi_hw->baudr = 8;
+    ssi_hw->ssienr = 1;
+}
+
 static void __no_inline_not_in_flash_func(xip_update_copy)(uint32_t *buf)
 {
+#if !PICO_RP2040
+#error "xip_update_copy uses the RP2040 bootrom flash API"
+#endif
+    rom_connect_internal_flash_fn connect =
+        (rom_connect_internal_flash_fn)rom_func_lookup_inline(ROM_FUNC_CONNECT_INTERNAL_FLASH);
+    rom_flash_exit_xip_fn exit_xip =
+        (rom_flash_exit_xip_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_EXIT_XIP);
+    rom_flash_range_erase_fn erase =
+        (rom_flash_range_erase_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_RANGE_ERASE);
+    rom_flash_range_program_fn program =
+        (rom_flash_range_program_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_RANGE_PROGRAM);
+    rom_flash_flush_cache_fn flush_cache =
+        (rom_flash_flush_cache_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_FLUSH_CACHE);
+    rom_flash_enter_cmd_xip_fn enter_cmd_xip =
+        (rom_flash_enter_cmd_xip_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_ENTER_CMD_XIP);
+
     for (uint32_t s = 0; s < XIP_UPDATE_MAX_SECTORS; s++)
     {
         if (!(xip_update_touched[s / 8] & (1u << (s % 8))))
@@ -82,10 +118,24 @@ static void __no_inline_not_in_flash_func(xip_update_copy)(uint32_t *buf)
         const uint32_t stage = xip_update_map ? xip_update_map[s] : (uint32_t)xip_update_base + s;
         const volatile uint32_t *src =
             (const volatile uint32_t *)(XIP_NOCACHE_NOALLOC_BASE + stage * FLASH_SECTOR_SIZE);
+        const volatile uint32_t *dst =
+            (const volatile uint32_t *)(XIP_NOCACHE_NOALLOC_BASE + s * FLASH_SECTOR_SIZE);
+        xip_update_read_mode(connect, exit_xip, flush_cache, enter_cmd_xip);
         for (uint32_t i = 0; i < FLASH_SECTOR_SIZE / 4; i++)
             buf[i] = src[i];
-        flash_range_erase(s * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
-        flash_range_program(s * FLASH_SECTOR_SIZE, (const uint8_t *)buf, FLASH_SECTOR_SIZE);
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            connect();
+            exit_xip();
+            erase(s * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE, FLASH_BLOCK_SIZE, 0xd8);
+            program(s * FLASH_SECTOR_SIZE, (const uint8_t *)buf, FLASH_SECTOR_SIZE);
+            xip_update_read_mode(connect, exit_xip, flush_cache, enter_cmd_xip);
+            uint32_t i = 0;
+            while (i < FLASH_SECTOR_SIZE / 4 && dst[i] == buf[i])
+                i++;
+            if (i == FLASH_SECTOR_SIZE / 4)
+                break;
+        }
     }
     // watchdog_reboot(0, 0, 0), which lives in flash
     hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);

@@ -633,6 +633,11 @@ void uf2_task(void)
         // The PIX FIFO must drain before the RIA resets, so that the VGA
         // receives the reboot request.
         busy_wait_ms(50);
+        // A VGA that executes from flash (RP2040) staged the image and now
+        // copies it into place before it reboots, about 50 ms per sector.
+        // The RIA probes for the VGA for only a few ms at boot, so it waits
+        // the copy out, or it boots to "VGA Not Found".
+        busy_wait_ms((uf2_page_idx / (FLASH_SECTOR_SIZE / FLASH_PAGE_SIZE) + 1) * 80 + 1000);
         watchdog_reboot(0, 0, 0);
         break;
     case UF2_VGA_LOCKUP:

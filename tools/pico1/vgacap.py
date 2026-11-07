@@ -148,12 +148,21 @@ def main():
     l.add_argument("--frames", type=int, default=240)
     m = sub.add_parser("mem", help="read the VGA's XRAM, optionally diff with a .rp6502")
     m.add_argument("--rom")
+    fp = sub.add_parser("flashpage", help="ask the VGA to stage XRAM[0..255] as flash page N")
+    fp.add_argument("page", type=int)
     a = ap.parse_args()
 
     path = a.port or sorted(glob.glob("/dev/cu.usbmodem*"))[0]
     port = Port(path)
     os.makedirs(a.out, exist_ok=True)
     try:
+        if a.cmd == "flashpage":
+            port.send(b"F", a.page)
+            end = time.time() + 3
+            while time.time() < end:
+                port.fill(0.2)
+            sys.stdout.write(port.buf.decode("latin1"))
+            return 0
         if a.cmd == "mem":
             vram = bytearray(65536)
             got = set()

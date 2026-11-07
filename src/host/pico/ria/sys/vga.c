@@ -14,6 +14,7 @@
 #include "ria/sys/pix.h"
 #include "ria/sys/ria.h"
 #include "ria/sys/vga.h"
+#include "ria/mon/uf2.h"
 #include "core/sys/config.h"
 #include "ria.pio.h"
 #include <pico/stdlib.h>
@@ -388,6 +389,12 @@ void __in_flash("vga_init") vga_init(void)
 
 void vga_task(void)
 {
+    // A VGA running from flash (Pico 1) stops VSYNC while it erases or writes
+    // flash for FLASH, which is no reason to drop the backchannel its ACKs
+    // come over. The 6502 is stopped meanwhile.
+    if (uf2_active())
+        vga_vsync_deadline = time_us_32() + VGA_VSYNC_WATCHDOG_MS * 1000;
+
     if ((vga_state == VGA_CONNECTED || vga_state == VGA_NO_VERSION) &&
         (int32_t)(time_us_32() - vga_vsync_deadline) >= 0)
     {
