@@ -1,7 +1,19 @@
 It's always worth the tokens to read ~/picocomputer.github.io at the start
 of every session.
 
-This is a RP2350 project, not RP2040 as some legacy filenames may suggest.
+This repository is the Pico 1 port of the RP6502: it runs the firmware on the
+original Raspberry Pi Pico / Pico W (RP2040). Upstream (picocomputer/rp6502) is
+RP2350-only and does not take these changes; this fork carries them, on main.
+
+The RP2350 build must keep building and behave as upstream does, so upstream
+can still be merged. RP2040 changes go behind PICO_RP2040 (set by the SDK from
+PICO_BOARD), or are exact for both chips. Build and check with
+tools/pico1/build.sh (pico_w, pico, pico2_w). PICO1_PLAN.md holds the port's
+status, hardware checklist and log; keep it current.
+
+The RP2040 has 264 KB of RAM, a Cortex-M0+ with no FPU and no unaligned
+access, and two PIO blocks. Code that core 1, the VGA render or an IRQ can
+reach must stay in RAM; tools/pico1/hotpath.py checks it.
 
 A machine is everything that comes together to make a Picocomputer.
 src/host brings together the core with the needed services.

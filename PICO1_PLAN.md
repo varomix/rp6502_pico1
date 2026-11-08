@@ -1,9 +1,13 @@
-# RP6502 on the Pi Pico 1 (RP2040) — Port Plan
+# RP6502 on the Pi Pico 1 (RP2040)
 
-An experimental fork of [picocomputer/rp6502](https://github.com/picocomputer/rp6502)
-that aims to run as close to the full upstream firmware as possible on the
-original Raspberry Pi Pico / Pico W (RP2040). Upstream is RP2350-only and will
-not take these changes; this fork carries them.
+This repository is the Pico 1 port of
+[picocomputer/rp6502](https://github.com/picocomputer/rp6502): the full
+firmware, as close to upstream as the hardware allows, on the original
+Raspberry Pi Pico / Pico W (RP2040). Upstream is RP2350-only and will not take
+these changes, so this fork carries them on `main`, and keeps the RP2350 build
+working so upstream can still be merged.
+
+This file is the port's plan, status, hardware checklist and log.
 
 Baseline: upstream `ad6293c` (v0.42+, 2026-10-26).
 Target hardware: Pico W as RIA (RIA-W), Pico or Pico W as VGA.
