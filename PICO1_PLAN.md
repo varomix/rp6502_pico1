@@ -224,7 +224,9 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       the RIA). Idle 43%, 1 voice 48%, rhythm 75%, 9 voices 84% (~1 held
       sample/s). `-O2` was slower than `-Os` here. Open: listening test, and
       whether USB/WiFi cope with ~16% of core 0 at 9 voices.
-- [ ] Audio: PSG, bell
+- [x] Audio PSG (`tools/pico1/psg_rom.py`): idle 21%, 8-voice chord 24%,
+      all 8 frequencies rewritten nonstop 46%; no overruns; sounds clean
+- [ ] Audio: bell
 - [x] VSYNC (backchannel trap) arrives; [ ] confirm 60 Hz in a game
 - [ ] WiFi join, NTP, telnet modem; BLE keyboard
 - [ ] Save settings (flash write) while a program runs and video is active
