@@ -293,6 +293,16 @@ unsigned long vga_frame_count(void)
 /* Pico 1 port debug: render time per scanline, worst case per core. */
 extern volatile uint32_t scanvideo_dbg_missed;
 static volatile uint32_t vga_dbg_render_max[2], vga_dbg_render_n[2];
+/* Pico 1 port debug: the slowest line since the last print, with the time
+ * each plane's fill (f) and sprites (s) took on it, in microseconds. Held
+ * until printed, so a line from a stretch when core 0 is too busy to print
+ * still shows once it frees up. */
+static volatile struct
+{
+    uint32_t total;
+    int16_t y;
+    uint16_t fill[SCANVIDEO_PLANE_COUNT], sprite[SCANVIDEO_PLANE_COUNT];
+} vga_dbg_worst;
 #endif
 
 static void vga_render_scanline(void)
@@ -319,6 +329,19 @@ static void vga_render_scanline(void)
     bool filled[SCANVIDEO_PLANE_COUNT] = {false, false, false};
     uint32_t *foreground = NULL;
     vga_prog_t prog = *vga_prog_row(scanline_id);
+#if PICO_RP2040
+    uint16_t dbg_fill[SCANVIDEO_PLANE_COUNT] = {0}, dbg_sprite[SCANVIDEO_PLANE_COUNT] = {0};
+    uint32_t dbg_t = timer_hw->timerawl;
+#define VGA_DBG_LAP(arr, i)                         \
+    do                                              \
+    {                                               \
+        const uint32_t now = timer_hw->timerawl;    \
+        (arr)[i] = (uint16_t)(now - dbg_t);         \
+        dbg_t = now;                                \
+    } while (0)
+#else
+#define VGA_DBG_LAP(arr, i) ((void)0)
+#endif
     for (int i = 0; i < SCANVIDEO_PLANE_COUNT; i++)
     {
         if (prog.fill_fn[i])
@@ -330,6 +353,7 @@ static void vga_render_scanline(void)
                                         prog.fill_config[i]);
             if (filled[i])
                 foreground = data[i];
+            VGA_DBG_LAP(dbg_fill, i);
         }
         if (prog.sprite_fn[i])
         {
@@ -344,8 +368,10 @@ static void vga_render_scanline(void)
                               (uint16_t *)(foreground + 1),
                               prog.sprite_config[i],
                               prog.sprite_length[i]);
+            VGA_DBG_LAP(dbg_sprite, i);
         }
     }
+#undef VGA_DBG_LAP
 #ifdef VGA_CAP
     if (cap_state == CAP_WANT && scanline_id == cap_line)
     {
@@ -396,6 +422,16 @@ static void vga_render_scanline(void)
         const uint core = get_core_num();
         if (dt > vga_dbg_render_max[core])
             vga_dbg_render_max[core] = dt;
+        if (dt > vga_dbg_worst.total)
+        {
+            vga_dbg_worst.total = dt;
+            vga_dbg_worst.y = scanline_id;
+            for (int i = 0; i < SCANVIDEO_PLANE_COUNT; i++)
+            {
+                vga_dbg_worst.fill[i] = dbg_fill[i];
+                vga_dbg_worst.sprite[i] = dbg_sprite[i];
+            }
+        }
         vga_dbg_render_n[core]++;
     }
 #endif
@@ -511,21 +547,38 @@ void vga_task(void)
     vga_scanvideo_switch();
     vga_render_scanline();
 #if PICO_RP2040
+    /* Two short lines on alternate seconds: the console's buffer is 128
+     * bytes and com_dbg_out drops anything over half its free room. */
     static absolute_time_t dbg_next;
     static uint32_t dbg_missed_last;
+    static bool dbg_worst_turn;
     if (time_reached(dbg_next))
     {
-        dbg_next = make_timeout_time_ms(2000);
-        uint32_t missed = scanvideo_dbg_missed;
-        char buf[96];
-        int n = snprintf(buf, sizeof(buf), "\r\n[vga miss=%lu +%lu max0=%luus max1=%luus n0=%lu n1=%lu]\r\n",
+        dbg_next = make_timeout_time_ms(1000);
+        char buf[64];
+        int n;
+        if (dbg_worst_turn)
+        {
+            n = snprintf(buf, sizeof(buf), "[vgaw y=%d %lu f=%u/%u/%u s=%u/%u/%u]\r\n",
+                         vga_dbg_worst.y, (unsigned long)vga_dbg_worst.total,
+                         vga_dbg_worst.fill[0], vga_dbg_worst.fill[1], vga_dbg_worst.fill[2],
+                         vga_dbg_worst.sprite[0], vga_dbg_worst.sprite[1], vga_dbg_worst.sprite[2]);
+            if (com_dbg_out(buf, n))
+                vga_dbg_worst.total = 0;
+        }
+        else
+        {
+            uint32_t missed = scanvideo_dbg_missed;
+            n = snprintf(buf, sizeof(buf), "\r\n[vga miss=%lu +%lu max0=%luus max1=%luus n0=%lu n1=%lu]\r\n",
                          (unsigned long)missed, (unsigned long)(missed - dbg_missed_last),
                          (unsigned long)vga_dbg_render_max[0], (unsigned long)vga_dbg_render_max[1],
                          (unsigned long)vga_dbg_render_n[0], (unsigned long)vga_dbg_render_n[1]);
-        dbg_missed_last = missed;
-        vga_dbg_render_max[0] = vga_dbg_render_max[1] = 0;
-        vga_dbg_render_n[0] = vga_dbg_render_n[1] = 0;
-        com_dbg_out(buf, n);
+            dbg_missed_last = missed;
+            vga_dbg_render_max[0] = vga_dbg_render_max[1] = 0;
+            vga_dbg_render_n[0] = vga_dbg_render_n[1] = 0;
+            com_dbg_out(buf, n);
+        }
+        dbg_worst_turn = !dbg_worst_turn;
     }
 #endif
 }

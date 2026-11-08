@@ -17,6 +17,10 @@ if(PICO_RP2040)
         FILES section_ram_vector_table.incl
               default_text_excludes.incl
               default_rodata_excludes.incl)
+    # Nothing in the VGA calls malloc (only the SDK's own wrappers reference
+    # it), so the SDK's 2 KB heap reserve is cut to 1 KB to leave RAM for
+    # the render paths.
+    target_compile_definitions(rp6502-vga PRIVATE PICO_HEAP_SIZE=0x400)
     # Render code runs on core 1 during flash erase, so it must be in RAM.
     # LTO is off for these so ld_rp2040/*_excludes.incl can match them by name.
     set(RP6502_VGA_RAM_SOURCES

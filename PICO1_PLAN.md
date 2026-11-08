@@ -208,7 +208,21 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 
 ### Hardware test checklist
 - [x] VGA boots, console visible at 640×480 (252 MHz)
-- [ ] VGA modes 1, 2, 3, 5 (mode 4 done); 720p; SXGA — check the clock
+- [x] A real game: ogodfrey/space-invaders-rp6502 (mode 3 320×240 4bpp
+      bitmap + console plane + PSG) plays correctly at 640×480, no scanline
+      misses, PSG 22% of core 0. Built with cl65 -t rp6502 + rp6502.py create.
+- [x] A heavy game: rumbledethumps/quarry (prebuilt ROM; modes 2, 3, 5 on
+      three planes, ~200 custom sprites) plays with 0 scanline misses after:
+      mode 5 custom-sprite scan out of line (13-instr reject), 2 bpp custom
+      sprites a byte at a time, and `mode_word_t` aligned(2) on RP2040 (GCC
+      was storing each pixel pair as 4 bytes: 324 strb sequences gone from
+      modes 1/2/3/5). Worst gameplay line 142–144 µs (~139 µs per core per
+      line at 320×240): thin margin.
+- [x] VGA test corpus (tests/cpu/vga/vidmodes.py, `tools/pico1/vgarun.py`)
+      at 640×480: 105/111 clean before the speedups; the 6 that miss are
+      deliberate overload/stacking tests. Found and fixed: mode 3 16 bpp at
+      an odd XRAM address hard-faulted the M0+.
+- [ ] Corpus re-run after the speedups; 720p; SXGA — check the clock
       table still locks for those timings now that 480p uses 252 MHz
 - [x] RIA boots to monitor over the VGA console; `STATUS`
 - [x] 6502 runs at 8 MHz (sys 256 MHz, 1.20 V) — Klaus functional tests
@@ -241,7 +255,8 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 - Gate or remove debug: VGA per-page FLASH lines, missed-scanline prints,
   capture commands (`sys/cap.c`), backchannel counters in `STATUS`,
   `PICO1_BC_SPLIT`, the `[AUD …]` line / `aud_status_response` /
-  `aud_dbg_task`, and `EMU8950_PROF` section timing.
+  `aud_dbg_task`, `EMU8950_PROF` section timing, and the VGA
+  `[vgaw …]` worst-line per-plane timing (and com_dbg_out's bool).
 
 ## 6. Log
 

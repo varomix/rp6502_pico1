@@ -30,7 +30,15 @@
 /* A scanline buffer word is two pixels, the left one in the low half. Expanding
  * through a table of the four ways a pixel pair can land costs no branches,
  * where a switch on a nibble costs an indirect one per nibble. */
+#if PICO_RP2040
+/* Pico 1 port: every pair is in a uint16_t scanline buffer or a 16-bit
+ * image mode4 only takes at an even address, so it is 2-aligned. Saying so
+ * lets the M0+, which has no unaligned word access, store two halfwords
+ * instead of four bytes and the shifts to split them. */
+typedef uint32_t mode_word_t __attribute__((aligned(2), may_alias));
+#else
 typedef uint32_t mode_word_t __attribute__((aligned(1), may_alias));
+#endif
 
 /* MSVC defines neither macro. */
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)

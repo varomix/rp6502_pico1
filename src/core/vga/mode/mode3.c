@@ -355,6 +355,18 @@ mode3_render_16bpp(int16_t plane_id, int16_t scanline_id, int16_t width, uint16_
         int16_t fill_cols = mode3_fill_cols(config, &rgb, &col, &width);
         const uint16_t *data = &row_data[col];
         col += fill_cols;
+#if PICO_RP2040
+        /* Pico 1 port: Cortex-M0+ faults on unaligned halfword loads, and a
+         * 16bpp bitmap may start at an odd XRAM byte. Same little-endian
+         * pixels, read a byte at a time. */
+        if ((uintptr_t)data & 1)
+        {
+            const uint8_t *bytes = (const uint8_t *)data;
+            for (; fill_cols; fill_cols--, bytes += 2)
+                *rgb++ = (uint16_t)(bytes[0] | bytes[1] << 8);
+            continue;
+        }
+#endif
         for (; fill_cols; fill_cols--)
             *rgb++ = *data++;
     }

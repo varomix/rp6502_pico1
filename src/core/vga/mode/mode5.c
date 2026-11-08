@@ -96,6 +96,38 @@ mode5_src_next(mode5_src_t *s, const uint16_t *palette, int bpp)
     return color;
 }
 
+/* Whole 2 bpp source bytes, four pixels each with fixed shifts, instead of
+ * the per-pixel refill test and running shift of mode5_src_next. The step is
+ * an argument so both flips share one copy: Quarry's bricks and their cracks
+ * are 2 bpp, and more copies, or other depths, do not fit the RP2040's RAM.
+ * Only the custom renderer uses it. Returns the next dst. */
+static uint16_t *__attribute__((noinline))
+mode5_bytes_2bpp(uint16_t *dst, const uint8_t *src, unsigned bytes,
+                 const uint16_t *palette, int step)
+{
+    for (; bytes; bytes--)
+    {
+        const unsigned byte = *src++;
+        uint16_t color = palette[byte >> 6];
+        if (color & (1 << 5))
+            *dst = color;
+        dst += step;
+        color = palette[(byte >> 4) & 3];
+        if (color & (1 << 5))
+            *dst = color;
+        dst += step;
+        color = palette[(byte >> 2) & 3];
+        if (color & (1 << 5))
+            *dst = color;
+        dst += step;
+        color = palette[byte & 3];
+        if (color & (1 << 5))
+            *dst = color;
+        dst += step;
+    }
+    return dst;
+}
+
 /* Paints image columns s_lo through s_lo + count - 1 in that order, so a flip
  * is the direction dst steps. dst is the canvas pixel the first column lands
  * on; doubled, it is the left of that column's pair, or the right when
@@ -104,13 +136,30 @@ mode5_src_next(mode5_src_t *s, const uint16_t *palette, int bpp)
 static inline __attribute__((always_inline)) void
 mode5_blit(uint16_t *dst, const uint8_t *row, const uint16_t *palette,
            unsigned s_lo, unsigned count, bool lead, bool tail,
-           int bpp, bool hflip, bool hdouble)
+           int bpp, bool hflip, bool hdouble, bool unroll)
 {
     mode5_src_t s;
     mode5_src_seek(&s, row, s_lo, bpp);
     if (!hdouble)
     {
-        for (unsigned n = count; n; n--)
+        unsigned n = count;
+        if (unroll && bpp == 2)
+        {
+            /* The pixels left in the byte the seek loaded go first, then
+             * whole bytes through mode5_bytes_2bpp, then the rest below. */
+            for (; n && s.left; n--)
+            {
+                const uint16_t color = mode5_src_next(&s, palette, bpp);
+                if (color & (1 << 5))
+                    *dst = color;
+                dst += hflip ? -1 : 1;
+            }
+            const unsigned bytes = n / 4;
+            dst = mode5_bytes_2bpp(dst, s.src, bytes, palette, hflip ? -1 : 1);
+            s.src += bytes;
+            n -= bytes * 4;
+        }
+        for (; n; n--)
         {
             const uint16_t color = mode5_src_next(&s, palette, bpp);
             if (color & (1 << 5))
@@ -185,7 +234,7 @@ mode5_render(int16_t scanline, int16_t width, uint16_t *rgb,
         const uint8_t *row_data =
             (const uint8_t *)&xram[sprites[i].xram_sprite_ptr + tex_y * bytes_per_row];
         mode5_blit(rgb + x_start, row_data, palette, tex_x, size_x,
-                   false, false, bpp, false, false);
+                   false, false, bpp, false, false, false);
     }
 }
 
@@ -207,39 +256,35 @@ mode5_render(int16_t scanline, int16_t width, uint16_t *rgb,
     F(14, 4, true, true)  \
     F(15, 8, true, true)
 
-static void
-mode5_render_custom(int16_t scanline, int16_t width, uint16_t *rgb, uint16_t config_ptr, uint16_t length)
+/* One custom sprite that the scan below found on this scanline, tex_y rows
+ * into its (possibly doubled) height. */
+static void __attribute__((noinline))
+mode5_render_custom_one(const mode5_csprite_t *sprite, int tex_y, int16_t width, uint16_t *rgb)
 {
-    const mode5_csprite_t *sprites = (const mode5_csprite_t *)&xram[config_ptr];
-
-    for (uint16_t i = 0; i < length; i++)
     {
-        const int options = sprites[i].options;
+        const int options = sprite->options;
         const int bpp_log = options & 3;
         const int hflip = (options & MODE5_HFLIP) != 0;
         const int vflip = (options & MODE5_VFLIP) != 0;
         const int hdouble = (options & MODE5_HDOUBLE) != 0;
         const int vdouble = (options & MODE5_VDOUBLE) != 0;
-        const int nw = sprites[i].width_height & 15;
+        const int nw = sprite->width_height & 15;
         const int w = (nw + 1) * 4;
-        const int h = ((sprites[i].width_height >> 4) + 1) * 4;
+        const int h = ((sprite->width_height >> 4) + 1) * 4;
 
-        const int tex_y = scanline - sprites[i].y_pos_px;
-        if (tex_y < 0 || tex_y >= (h << vdouble))
-            continue;
         int row = tex_y >> vdouble;
         if (vflip)
             row = h - 1 - row;
 
-        const int x = sprites[i].x_pos_px;
+        const int x = sprite->x_pos_px;
         const int footprint = w << hdouble;
         if (x + footprint <= 0 || x >= width)
-            continue;
+            return;
 
         const int bytes_per_row = (((nw + 1) << bpp_log) + 1) >> 1;
         const unsigned sprite_data_size = h * bytes_per_row;
-        if (sprites[i].xram_sprite_ptr > 0x10000 - sprite_data_size)
-            continue;
+        if (sprite->xram_sprite_ptr > 0x10000 - sprite_data_size)
+            return;
 
         const int lo = x < 0 ? -x : 0;
         const int hi = x + footprint > width ? x + footprint - width : 0;
@@ -252,20 +297,38 @@ mode5_render_custom(int16_t scanline, int16_t width, uint16_t *rgb, uint16_t con
         const bool lead = hdouble && (a & 1);
         const bool tail = hdouble && (b & 1);
 
-        const uint16_t *palette = mode5_get_palette(sprites[i].palette_ptr, 1 << bpp_log);
+        const uint16_t *palette = mode5_get_palette(sprite->palette_ptr, 1 << bpp_log);
         const uint8_t *row_data =
-            (const uint8_t *)&xram[sprites[i].xram_sprite_ptr + row * bytes_per_row];
+            (const uint8_t *)&xram[sprite->xram_sprite_ptr + row * bytes_per_row];
 
         switch (bpp_log | (hflip << 2) | (hdouble << 3))
         {
 #define MODE5_BLIT_CASE(key, bpp, hf, hd)                            \
     case key:                                                        \
         mode5_blit(dst, row_data, palette, s_lo, s_hi - s_lo + 1,    \
-                   lead, tail, bpp, hf, hd);                         \
+                   lead, tail, bpp, hf, hd, true);                   \
         break;
             MODE5_BLITS(MODE5_BLIT_CASE)
 #undef MODE5_BLIT_CASE
         }
+    }
+}
+
+/* Most descriptors miss most scanlines, so the scan keeps only the pointer,
+ * the end and the scanline live and rejects with one unsigned compare: tex_y
+ * below zero wraps past any height. The drawing is out of line. */
+static void
+mode5_render_custom(int16_t scanline, int16_t width, uint16_t *rgb, uint16_t config_ptr, uint16_t length)
+{
+    const mode5_csprite_t *sprite = (const mode5_csprite_t *)&xram[config_ptr];
+    const mode5_csprite_t *const end = sprite + length;
+    for (; sprite != end; sprite++)
+    {
+        const int tex_y = scanline - sprite->y_pos_px;
+        const unsigned span = (((unsigned)sprite->width_height >> 4) + 1) * 4
+                              << (sprite->options >> 7);
+        if ((unsigned)tex_y < span)
+            mode5_render_custom_one(sprite, tex_y, width, rgb);
     }
 }
 
