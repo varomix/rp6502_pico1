@@ -35,6 +35,9 @@ def write_all(data):
 
 read_until([b"\xff"], 0.3)  # drain
 write_all(b"\r"); read_until([b"]"], 2)
+# After the prompt the monitor probes the terminal (ESC[6n, ESC[>c) and reads
+# the reply for a moment; keys typed then are eaten as the reply. Let it settle.
+read_until([b"\xff"], 0.6)
 write_all(f"UPLOAD {a.remote}\r".encode())
 out, m = read_until([b"}", b"\n?"], 5)
 if m != b"}": sys.exit(f"UPLOAD refused: {out!r}")

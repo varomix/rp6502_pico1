@@ -139,10 +139,25 @@ Options, in order of preference:
 
 ---
 
-## 5. Status (2026-11-06)
+## 5. Status (2026-11-08)
 
-All of Phases 1–4 are **implemented and building**; nothing has run on
-hardware yet. Next step is flashing and testing (Phase 2–4 test items).
+All of Phases 1–4 are **implemented and building**. RIA-W + VGA boot on real
+Pico 1 W / Pico 1 hardware, load ROMs, and update each other with `FLASH`.
+Remaining work is the unchecked hardware items below, then Phase 5.
+
+### Verified on hardware (2026-11-06)
+- VGA 640×480 at **252 MHz / 1.25 V** (10× pixel clock). At 201.6 MHz the
+  M0+ missed scanlines (blue lines, sprite holes).
+- Mode 4 sprites after the M0+ unaligned-load fix (byte-safe metadata,
+  odd image pointers skipped).
+- RIA ↔ VGA backchannel: VSYNC, PIX ACK/NAK (after `cs_rwb` went to 9 instrs
+  so the 5-instr rx_trap fits pio0).
+- `LOAD` of a ROM (Flappy Coo); VGA XRAM matches the ROM on every load
+  after DMA data channels are started through the trigger alias.
+- `FLASH MSC0:/…uf2` updates the RIA and, through it, the VGA (staged in
+  spare flash, copied by a bootrom-only RAM routine). No BOOTSEL needed.
+- Debug aids: `tools/pico1/{console,upload,vgacap}.py`, scanline capture,
+  missed-scanline / render-time prints on the VGA USB console.
 
 ### How RAM was made to fit
 | | RP2350 build | RP2040 build | free |
@@ -192,15 +207,25 @@ hardware yet. Next step is flashing and testing (Phase 2–4 test items).
 - VGA on any Pico 1: `build/pico/vga/rp6502-vga.uf2`
 
 ### Hardware test checklist
-- [ ] VGA boots, console visible at 640×480; then each mode 1–5; 720p; SXGA
-- [ ] RIA boots to monitor over USB-serial / VGA console; `STATUS`
-- [ ] 6502 runs at 8 MHz (sys 256 MHz); if unstable try 1.25 V / 1.30 V
-      (`SYS_RP2350_VREG`) or lower PHI2
-- [ ] USB keyboard/mouse/gamepad/MSC; `LOAD` a ROM
+- [x] VGA boots, console visible at 640×480 (252 MHz)
+- [ ] VGA modes 1, 2, 3, 5 (mode 4 done); 720p; SXGA — check the clock
+      table still locks for those timings now that 480p uses 252 MHz
+- [x] RIA boots to monitor over the VGA console; `STATUS`
+- [x] 6502 runs at 8 MHz (sys 256 MHz, 1.20 V) — Klaus functional tests
+      via `tools/pico1/klaus_rom.py`: 6502 test 49 passes / 10 min soak,
+      65C02 extended 17 passes, 0 failures, 0 VGA scanline misses
+- [ ] USB keyboard/mouse/gamepad (MSC works: FLASH/LOAD from the stick)
+- [x] `LOAD` a ROM
 - [ ] Audio: PSG, OPL (watch for core-0 overload / crackle), bell
-- [ ] VSYNC (backchannel trap) — games relying on vsync run at 60 Hz
+- [x] VSYNC (backchannel trap) arrives; [ ] confirm 60 Hz in a game
 - [ ] WiFi join, NTP, telnet modem; BLE keyboard
 - [ ] Save settings (flash write) while a program runs and video is active
+- [x] `FLASH` update of RIA and VGA from MSC
+
+### Before release
+- Gate or remove debug: VGA per-page FLASH lines, missed-scanline prints,
+  capture commands (`sys/cap.c`), backchannel counters in `STATUS`,
+  `PICO1_BC_SPLIT`.
 
 ## 6. Log
 
@@ -208,3 +233,9 @@ hardware yet. Next step is flashing and testing (Phase 2–4 test items).
 - 2026-11-06 — Phase 1 plumbing; RAM fit for RIA/RIA-W/VGA; core-1 and
   render paths verified flash-free; PIO repack for CYW43. All RP2040
   targets build; RP2350 still builds. Awaiting hardware test.
+- 2026-11-06 — First hardware runs. Fixed: pio0 overflow (backchannel dead),
+  VGA scanline misses (→ 252 MHz), M0+ unaligned sprite loads, RP2040 DMA
+  CHAIN_TO stale-address race. Added XIP-safe staged `FLASH` for RIA and VGA.
+- 2026-11-08 — Plan status refreshed. 8 MHz 6502 verified: Klaus 6502 and
+  65C02 functional tests pass continuously at 1.20 V (10 min soak, 0 errors).
+  `upload.py` waits out the monitor's terminal probe after the prompt.
