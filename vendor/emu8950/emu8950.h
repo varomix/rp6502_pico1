@@ -15,6 +15,13 @@
 #define EMU8950_SIMPLER_NOISE 1            // Performance
 #define EMU8950_SHORT_NOISE_UPDATE_CHECK 1 // Performance
 
+/* Pico 1 port: skip the envelope, phase and output of operators that are
+ * silent and can only become audible through a key-on. Sample-exact; set
+ * by ria.cmake for RP2040 builds, where the per-sample path is too slow. */
+#ifndef EMU8950_SKIP_SILENT
+#define EMU8950_SKIP_SILENT 0
+#endif
+
 #define OPL_DEBUG 0
 
 /* voice data */

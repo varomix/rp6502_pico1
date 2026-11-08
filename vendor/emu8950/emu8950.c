@@ -16,6 +16,15 @@
 
 #define SAMPLE_BUF_SIZE 1024
 
+/* Pico 1 port: the RIA builds -Os, which leaves the per-operator helpers as
+ * calls inside the per-sample channel loop; force those inline (only those:
+ * forcing the envelope code too made the slot loop slower). */
+#if EMU8950_SKIP_SILENT && defined(__GNUC__)
+#define HOT_INLINE __inline__ __attribute__((always_inline))
+#else
+#define HOT_INLINE
+#endif
+
 #ifndef INLINE
 #if defined(_MSC_VER)
 #define INLINE __inline
@@ -914,6 +923,16 @@ static void update_slots(OPL *opl) {
         if (slot->update_requests) {
             commit_slot_update(slot, opl->notesel);
         }
+#if EMU8950_SKIP_SILENT
+        /* Released all the way to mute, the envelope cannot move, and the
+         * phase is not heard before the key-on that zeroes it. Any register
+         * write or key-on sets update_requests, which runs this slot again.
+         * Not HH or CYM: rhythm mode keeps their phase through key-on and
+         * feeds it to the snare and cymbal noise, muted or not. */
+        else if (slot->eg_state == RELEASE && slot->eg_out >= EG_MUTE && i != SLOT_HH && i != SLOT_CYM) {
+            continue;
+        }
+#endif
         calc_envelope(slot, opl->eg_counter, opl_test_flag(opl) & 1);
         calc_phase(slot, opl->pm_phase, opl->pm_mode, opl_test_flag(opl) & 4);
     }
@@ -921,7 +940,7 @@ static void update_slots(OPL *opl) {
 
 #endif
 /* input: 0..8191 output: -4095..4095 */
-static int16_t lookup_exp_table(int16_t i) {
+static HOT_INLINE int16_t lookup_exp_table(int16_t i) {
     /* from andete's expressoin */
     int16_t t = (exp_table[(i & 0xffu)] + 1024);
     int16_t res = t >> ((i & 0x7f00) >> 8);
@@ -932,7 +951,7 @@ static int16_t lookup_exp_table(int16_t i) {
 #endif
 }
 
-static INLINE int16_t to_linear(uint16_t h, OPL_SLOT *slot, int16_t am) {
+static HOT_INLINE int16_t to_linear(uint16_t h, OPL_SLOT *slot, int16_t am) {
     uint16_t att;
     if (slot->eg_out >= EG_MAX) {
         return 0;
@@ -946,7 +965,7 @@ static INLINE int16_t to_linear(uint16_t h, OPL_SLOT *slot, int16_t am) {
 #define LOGSIN_MASK2 (PG_WIDTH/2 - 1)
 
 //static INLINE uint16_t get_wave_table(OPL_SLOT *slot, uint32_t index) {
-static uint16_t get_wave_table(OPL_SLOT *slot, uint32_t index) {
+static HOT_INLINE uint16_t get_wave_table(OPL_SLOT *slot, uint32_t index) {
 #if !EMU8950_NO_WAVE_TABLE_MAP
     return slot->wave_table[index];
 #else
@@ -981,7 +1000,7 @@ static uint16_t get_wave_table(OPL_SLOT *slot, uint32_t index) {
 #endif
 }
 
-static INLINE uint16_t get_wave_table_wrap(OPL_SLOT *slot, uint32_t index) {
+static HOT_INLINE uint16_t get_wave_table_wrap(OPL_SLOT *slot, uint32_t index) {
 #if !EMU8950_NO_WAVE_TABLE_MAP
     return get_wave_table(slot, index & (PG_WIDTH - 1));
 #else
@@ -989,7 +1008,7 @@ static INLINE uint16_t get_wave_table_wrap(OPL_SLOT *slot, uint32_t index) {
 #endif
 }
 
-static INLINE int16_t calc_slot_car(OPL *opl, int ch, int16_t fm) {
+static HOT_INLINE int16_t calc_slot_car(OPL *opl, int ch, int16_t fm) {
     OPL_SLOT *slot = CAR(opl, ch);
 
     uint8_t am = slot->patch->AM ? opl->lfo_am : 0;
@@ -1000,7 +1019,7 @@ static INLINE int16_t calc_slot_car(OPL *opl, int ch, int16_t fm) {
     return slot->output[0];
 }
 
-static INLINE int16_t calc_slot_mod(OPL *opl, int ch) {
+static HOT_INLINE int16_t calc_slot_mod(OPL *opl, int ch) {
     OPL_SLOT *slot = MOD(opl, ch);
 
     int16_t fm = slot->patch->FB > 0 ? (slot->output[1] + slot->output[0]) >> (9 - slot->patch->FB) : 0;
@@ -1061,7 +1080,19 @@ static INLINE int16_t calc_slot_hat(OPL *opl) {
 #define _MO(x) (-(x) >> 1)
 #define _RO(x) (x)
 
-static INLINE int16_t calc_fm(OPL *opl, int ch) {
+static HOT_INLINE int16_t calc_fm(OPL *opl, int ch) {
+#if EMU8950_SKIP_SILENT
+    /* Both operators at or past EG_MAX: to_linear gives 0 for each, so the
+     * channel is 0 and only the feedback history moves. */
+    OPL_SLOT *m = MOD(opl, ch), *c = CAR(opl, ch);
+    if (m->eg_out >= EG_MAX && c->eg_out >= EG_MAX) {
+        m->output[1] = m->output[0];
+        m->output[0] = 0;
+        c->output[1] = c->output[0];
+        c->output[0] = 0;
+        return 0;
+    }
+#endif
     if (opl->ch_alg[ch]) {
         return calc_slot_car(opl, ch, 0) + calc_slot_mod(opl, ch);
     }
@@ -1116,9 +1147,24 @@ static void update_timer(OPL *opl) {
 #endif
 
 #if !EMU8950_LINEAR
+#if EMU8950_PROF
+/* Pico 1 port debug: cycles per section, read off the audio IRQ's PWM
+ * counter (EMU8950_PROF is its CTR register address). */
+uint32_t emu8950_prof[3];
+#define PROF_NOW() (*(volatile uint32_t *)(EMU8950_PROF))
+#define PROF_TOP() (*(volatile uint32_t *)(EMU8950_PROF + 8))
+#define PROF_MARK(k) do { uint32_t _t = PROF_NOW(); \
+    emu8950_prof[k] += _t >= _p ? _t - _p : _t + PROF_TOP() + 1 - _p; _p = _t; } while (0)
+#else
+#define PROF_MARK(k) do { } while (0)
+#endif
+
 static void update_output(OPL *opl) {
     int16_t *out;
     int i;
+#if EMU8950_PROF
+    uint32_t _p = PROF_NOW();
+#endif
 
 #if !EMU8950_NO_TIMER
     update_timer(opl);
@@ -1132,7 +1178,9 @@ static void update_output(OPL *opl) {
 #else
     update_short_noise(opl);
 #endif
+    PROF_MARK(0);
     update_slots(opl);
+    PROF_MARK(1);
 
     out = opl->ch_out;
 
@@ -1184,7 +1232,7 @@ static void update_output(OPL *opl) {
         }
     }
     update_noise(opl, 2);
-
+    PROF_MARK(2);
 }
 
 INLINE static void mix_output(OPL *opl) {

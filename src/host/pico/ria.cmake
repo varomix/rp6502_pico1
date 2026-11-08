@@ -76,6 +76,16 @@ target_compile_definitions(${RIA_TARGET} PRIVATE
     USE_EMU8950_OPL=1
 )
 
+# Pico 1 port: the M0+ cannot afford emu8950's full per-sample path; skip
+# silent operators (sample-exact) and cap OPL writes taken per sample.
+if(PICO_RP2040)
+    target_compile_definitions(${RIA_TARGET} PRIVATE
+        EMU8950_SKIP_SILENT=1
+        AUD_DRAIN_MAX=4
+        EMU8950_PROF=0x40050094 # debug: PWM slice 7 (audio IRQ) CTR
+    )
+endif()
+
 target_sources(${RIA_TARGET} PRIVATE
     ${RIA_SRC}/main.c
     ${RP6502_ROOT}/src/host/pico/host.c

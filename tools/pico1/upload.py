@@ -50,7 +50,7 @@ for off in range(0, len(data), 1024):
     write_all(chunk)
     out, m = read_until([b"}", b"\n?"], 10)
     if m != b"}":
-        sys.exit(f"\nchunk at {off} failed: {out[-200:]!r}")
+        sys.exit(f"\nchunk at {off} failed: {out[-1200:]!r}")
     done = off + len(chunk)
     sys.stdout.write(f"\r{done}/{len(data)} bytes  {done/(time.time()-t0)/1024:.1f} KB/s"); sys.stdout.flush()
 write_all(b"END\r"); read_until([b"]"], 5)

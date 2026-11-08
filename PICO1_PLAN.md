@@ -216,7 +216,15 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       65C02 extended 17 passes, 0 failures, 0 VGA scanline misses
 - [ ] USB keyboard/mouse/gamepad (MSC works: FLASH/LOAD from the stick)
 - [x] `LOAD` a ROM
-- [ ] Audio: PSG, OPL (watch for core-0 overload / crackle), bell
+- [~] Audio OPL: audio IRQ load on core 0 measured with `tools/pico1/opl_rom.py`
+      and the `[AUD …]` debug line. emu8950 skips silent operators
+      (`EMU8950_SKIP_SILENT`, sample-exact vs. the full path) and force-inlines
+      the channel helpers; IRQ drains ≤4 writes/sample; an overrun makes the
+      next IRQ hold the level (no more core-0 lockups — `oplspam` used to hang
+      the RIA). Idle 43%, 1 voice 48%, rhythm 75%, 9 voices 84% (~1 held
+      sample/s). `-O2` was slower than `-Os` here. Open: listening test, and
+      whether USB/WiFi cope with ~16% of core 0 at 9 voices.
+- [ ] Audio: PSG, bell
 - [x] VSYNC (backchannel trap) arrives; [ ] confirm 60 Hz in a game
 - [ ] WiFi join, NTP, telnet modem; BLE keyboard
 - [ ] Save settings (flash write) while a program runs and video is active
@@ -225,7 +233,8 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 ### Before release
 - Gate or remove debug: VGA per-page FLASH lines, missed-scanline prints,
   capture commands (`sys/cap.c`), backchannel counters in `STATUS`,
-  `PICO1_BC_SPLIT`.
+  `PICO1_BC_SPLIT`, the `[AUD …]` line / `aud_status_response` /
+  `aud_dbg_task`, and `EMU8950_PROF` section timing.
 
 ## 6. Log
 
