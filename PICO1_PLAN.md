@@ -3,9 +3,10 @@
 This repository is the Pico 1 port of
 [picocomputer/rp6502](https://github.com/picocomputer/rp6502): the full
 firmware, as close to upstream as the hardware allows, on the original
-Raspberry Pi Pico / Pico W (RP2040). Upstream is RP2350-only and will not take
-these changes, so this fork carries them on `main`, and keeps the RP2350 build
-working so upstream can still be merged.
+Raspberry Pi Pico / Pico W (RP2040), and only there. Upstream is RP2350-only
+and will not take these changes, so this fork carries them on `main`. It is
+not a Pico 2 project: keeping the RP2350 build working or staying mergeable
+with upstream is not a goal.
 
 This file is the port's plan, status, hardware checklist and log.
 
@@ -42,9 +43,12 @@ ria_backchannel_tx 5 — fits two blocks comfortably.
 
 ## 2. Strategy
 
-Keep **one source tree** that still builds for RP2350. All RP2040 changes are
-behind `PICO_RP2040` (set by the SDK from `PICO_BOARD`). Never break the
-upstream build — that keeps merging upstream practical.
+The port started by keeping RP2040 changes behind `PICO_RP2040` so the
+RP2350 build still worked. That is no longer a goal (2026-11-08): this fork
+is for the Pico 1 only, so changes are made for the RP2040 directly. The
+existing guards stay; the RP2350 build may break and nobody needs to fix it.
+Upstream's host test suite is the parity check: the emulator builds the VGA
+modes and emu8950 with their RP2040 paths and must pass it.
 
 Order of work: build plumbing → VGA → RIA (no radio) → RIA-W → polish.
 Each phase ends with something flashable and tested on real hardware.

@@ -2,14 +2,18 @@ It's always worth the tokens to read ~/picocomputer.github.io at the start
 of every session.
 
 This repository is the Pico 1 port of the RP6502: it runs the firmware on the
-original Raspberry Pi Pico / Pico W (RP2040). Upstream (picocomputer/rp6502) is
-RP2350-only and does not take these changes; this fork carries them, on main.
+original Raspberry Pi Pico / Pico W (RP2040), and only there. Upstream
+(picocomputer/rp6502) is RP2350-only and does not take these changes; this
+fork carries them, on main. It is not a Pico 2 project: there is no need to
+keep the RP2350 build working or to stay mergeable with upstream, so make
+changes for the RP2040 directly rather than adding compatibility for the
+Pico 2. Existing #if PICO_RP2040 guards are harmless and can stay.
 
-The RP2350 build must keep building and behave as upstream does, so upstream
-can still be merged. RP2040 changes go behind PICO_RP2040 (set by the SDK from
-PICO_BOARD), or are exact for both chips. Build and check with
-tools/pico1/build.sh (pico_w, pico, pico2_w). PICO1_PLAN.md holds the port's
-status, hardware checklist and log; keep it current.
+Build and check with tools/pico1/build.sh pico_w (or pico). The emulator and
+upstream's test suite (src/host/libretro, RP6502_TESTS=ON, ctest) build the
+VGA modes and emu8950 with their RP2040 paths, so the tests check what the
+Pico 1 runs. PICO1_PLAN.md holds the port's status, hardware checklist and
+log; keep it current.
 
 The RP2040 has 264 KB of RAM, a Cortex-M0+ with no FPU and no unaligned
 access, and two PIO blocks. Code that core 1, the VGA render or an IRQ can

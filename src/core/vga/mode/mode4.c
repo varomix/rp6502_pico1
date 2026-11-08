@@ -232,6 +232,42 @@ static inline void sprite_scanline16(
         sprite_blit16_alpha(dst, src, isct.size_x);
 }
 
+/* Pico 1 port: an image may start at an odd XRAM byte, and the Cortex-M0+
+ * faults on an unaligned halfword or word load. Such a sprite reads its
+ * metadata word and texels a byte at a time; it draws what
+ * sprite_scanline16 draws. */
+static inline uint16_t mode4_le16(const uint8_t *p)
+{
+    return (uint16_t)(p[0] | p[1] << 8);
+}
+
+static void __attribute__((noinline)) sprite_scanline16_odd(
+    uint16_t *scanbuf, const mode4_sprite_t *sp, const uint8_t *sp_img, unsigned raster_y, unsigned raster_w)
+{
+    int size = 1u << sp->log_size;
+    intersect_t isct = get_sprite_intersect(sp->x_pos_px, sp->y_pos_px, sp->log_size, raster_y, raster_w);
+    if (isct.size_x <= 0)
+        return;
+    bool span_continuous = false;
+    if (sp->has_opacity_metadata)
+    {
+        const uint8_t *m = sp_img + size * size * sizeof(uint16_t) + isct.tex_offs_y * sizeof(uint32_t);
+        uint32_t meta = (uint32_t)m[0] | (uint32_t)m[1] << 8 | (uint32_t)m[2] << 16 | (uint32_t)m[3] << 24;
+        isct = intersect_with_metadata(isct, meta);
+        if (isct.size_x <= 0)
+            return;
+        span_continuous = !!(meta & (1u << 31));
+    }
+    uint16_t *dst = scanbuf + sp->x_pos_px + isct.tex_offs_x;
+    const uint8_t *src = sp_img + (isct.tex_offs_x + isct.tex_offs_y * size) * sizeof(uint16_t);
+    for (int n = isct.size_x; n; n--, src += 2, dst++)
+    {
+        const uint16_t pixel = mode4_le16(src);
+        if (span_continuous || (pixel & (1 << 5)))
+            *dst = pixel;
+    }
+}
+
 static void mode4_render_sprite(int16_t scanline, int16_t width, uint16_t *rgb, uint16_t config_ptr, uint16_t length)
 {
     const mode4_sprite_t *sprites = (void *)&xram[config_ptr];
@@ -248,15 +284,13 @@ static void mode4_render_sprite(int16_t scanline, int16_t width, uint16_t *rgb, 
             byte_size += px_size * sizeof(uint32_t);
         if (byte_size > 0x10000)
             continue;
-        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size
-#if PICO_RP2040
-            /* Pico 1 port: Cortex-M0+ faults on unaligned halfword loads. */
-            && !(sprites[i].xram_sprite_ptr & 1)
-#endif
-        )
+        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size)
         {
             const void *img = (void *)&xram[sprites[i].xram_sprite_ptr];
-            sprite_scanline16(rgb, &sprites[i], img, scanline, width);
+            if (sprites[i].xram_sprite_ptr & 1)
+                sprite_scanline16_odd(rgb, &sprites[i], img, scanline, width);
+            else
+                sprite_scanline16(rgb, &sprites[i], img, scanline, width);
         }
     }
 }
@@ -352,7 +386,8 @@ static inline void setup_interp_pix_coordgen(
 #endif
 }
 
-static inline void sprite_ablit16_alpha_loop_body(uint16_t *dst, unsigned mask)
+static inline __attribute__((always_inline)) void
+sprite_ablit16_alpha_loop_body(uint16_t *dst, unsigned mask, bool odd)
 {
 #if PICO_ON_DEVICE
     uint32_t overflow = (interp0->accum[0] | interp0->accum[1]) & mask;
@@ -363,12 +398,14 @@ static inline void sprite_ablit16_alpha_loop_body(uint16_t *dst, unsigned mask)
 #endif
     if (overflow)
         return;
-    uint16_t pixel = *src_addr;
+    /* Pico 1 port: an odd image base makes every texel address odd. */
+    uint16_t pixel = odd ? mode4_le16((const uint8_t *)src_addr) : *src_addr;
     if (pixel & (1 << 5))
         *dst = pixel;
 }
 
-static inline void sprite_ablit16_alpha_loop(uint16_t *dst, unsigned len, unsigned mask)
+static inline __attribute__((always_inline)) void
+sprite_ablit16_alpha_loop(uint16_t *dst, unsigned len, unsigned mask, bool odd)
 {
     uint16_t *dst_start = dst;
     unsigned pixels_8 = (len >> 3) << 3;
@@ -377,25 +414,25 @@ static inline void sprite_ablit16_alpha_loop(uint16_t *dst, unsigned len, unsign
     switch (remainder)
     {
     case 7:
-        sprite_ablit16_alpha_loop_body(&dst[6], mask);
+        sprite_ablit16_alpha_loop_body(&dst[6], mask, odd);
         __attribute__((fallthrough));
     case 6:
-        sprite_ablit16_alpha_loop_body(&dst[5], mask);
+        sprite_ablit16_alpha_loop_body(&dst[5], mask, odd);
         __attribute__((fallthrough));
     case 5:
-        sprite_ablit16_alpha_loop_body(&dst[4], mask);
+        sprite_ablit16_alpha_loop_body(&dst[4], mask, odd);
         __attribute__((fallthrough));
     case 4:
-        sprite_ablit16_alpha_loop_body(&dst[3], mask);
+        sprite_ablit16_alpha_loop_body(&dst[3], mask, odd);
         __attribute__((fallthrough));
     case 3:
-        sprite_ablit16_alpha_loop_body(&dst[2], mask);
+        sprite_ablit16_alpha_loop_body(&dst[2], mask, odd);
         __attribute__((fallthrough));
     case 2:
-        sprite_ablit16_alpha_loop_body(&dst[1], mask);
+        sprite_ablit16_alpha_loop_body(&dst[1], mask, odd);
         __attribute__((fallthrough));
     case 1:
-        sprite_ablit16_alpha_loop_body(&dst[0], mask);
+        sprite_ablit16_alpha_loop_body(&dst[0], mask, odd);
         __attribute__((fallthrough));
     case 0:
         break;
@@ -405,14 +442,14 @@ static inline void sprite_ablit16_alpha_loop(uint16_t *dst, unsigned len, unsign
     do
     {
         dst -= 8;
-        sprite_ablit16_alpha_loop_body(&dst[7], mask);
-        sprite_ablit16_alpha_loop_body(&dst[6], mask);
-        sprite_ablit16_alpha_loop_body(&dst[5], mask);
-        sprite_ablit16_alpha_loop_body(&dst[4], mask);
-        sprite_ablit16_alpha_loop_body(&dst[3], mask);
-        sprite_ablit16_alpha_loop_body(&dst[2], mask);
-        sprite_ablit16_alpha_loop_body(&dst[1], mask);
-        sprite_ablit16_alpha_loop_body(&dst[0], mask);
+        sprite_ablit16_alpha_loop_body(&dst[7], mask, odd);
+        sprite_ablit16_alpha_loop_body(&dst[6], mask, odd);
+        sprite_ablit16_alpha_loop_body(&dst[5], mask, odd);
+        sprite_ablit16_alpha_loop_body(&dst[4], mask, odd);
+        sprite_ablit16_alpha_loop_body(&dst[3], mask, odd);
+        sprite_ablit16_alpha_loop_body(&dst[2], mask, odd);
+        sprite_ablit16_alpha_loop_body(&dst[1], mask, odd);
+        sprite_ablit16_alpha_loop_body(&dst[0], mask, odd);
     } while (dst > dst_start);
 }
 
@@ -428,7 +465,12 @@ static inline void asprite_scanline16(
         atrans[j] = (int32_t)sp->transform[j] << 8;
     setup_interp_affine(isct, atrans);
     setup_interp_pix_coordgen(sp, sp_img, 1);
-    sprite_ablit16_alpha_loop(scanbuf + MAX(0, sp->x_pos_px), isct.size_x, 0xFFFF0000 << sp->log_size);
+    uint16_t *const dst = scanbuf + MAX(0, sp->x_pos_px);
+    const unsigned mask = 0xFFFF0000 << sp->log_size;
+    if ((uintptr_t)sp_img & 1)
+        sprite_ablit16_alpha_loop(dst, isct.size_x, mask, true);
+    else
+        sprite_ablit16_alpha_loop(dst, isct.size_x, mask, false);
 }
 
 static void mode4_render_asprite(
@@ -449,12 +491,7 @@ static void mode4_render_asprite(
             byte_size += px_size * sizeof(uint32_t);
         if (byte_size > 0x10000)
             continue;
-        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size
-#if PICO_RP2040
-            /* Pico 1 port: Cortex-M0+ faults on unaligned halfword loads. */
-            && !(sprites[i].xram_sprite_ptr & 1)
-#endif
-        )
+        if (sprites[i].xram_sprite_ptr <= 0x10000 - byte_size)
         {
             const void *img = (void *)&xram[sprites[i].xram_sprite_ptr];
             asprite_scanline16(rgb, &sprites[i], img, scanline, width);

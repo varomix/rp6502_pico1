@@ -117,8 +117,20 @@ endif()
 
 set_source_files_properties(
     ${RP6502_VENDOR}/emu8950/emu8950.c
-    PROPERTIES COMPILE_DEFINITIONS "USE_EMU8950_OPL=1"
+    PROPERTIES COMPILE_DEFINITIONS "USE_EMU8950_OPL=1;EMU8950_SKIP_SILENT=1"
 )
+# Pico 1 port: this fork targets the RP2040 only, so the emulator and its
+# tests build the renderers' RP2040 paths (aligned pixel pairs, byte reads
+# of odd 16 bpp rows) and emu8950's silent-operator skip, as the firmware
+# does. Only these files: elsewhere PICO_RP2040 pulls in Pico SDK headers.
+set_property(SOURCE
+    ${RP6502_SRC}/core/vga/mode/mode0.c
+    ${RP6502_SRC}/core/vga/mode/mode1.c
+    ${RP6502_SRC}/core/vga/mode/mode2.c
+    ${RP6502_SRC}/core/vga/mode/mode3.c
+    ${RP6502_SRC}/core/vga/mode/mode4.c
+    ${RP6502_SRC}/core/vga/mode/mode5.c
+    APPEND PROPERTY COMPILE_DEFINITIONS "PICO_RP2040=1")
 if(MSVC)
     set_source_files_properties(
         ${RP6502_VENDOR}/emu8950/emu8950.c
