@@ -230,8 +230,14 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       at 640×480: 105/111 clean before the speedups; the 6 that miss are
       deliberate overload/stacking tests. Found and fixed: mode 3 16 bpp at
       an odd XRAM address hard-faulted the M0+.
-- [ ] Corpus re-run after the speedups; 720p; SXGA — check the clock
-      table still locks for those timings now that 480p uses 252 MHz
+- [x] Corpus re-run after the speedups, all three display types; clocks
+      lock and nothing crashes. Clean: 640×480 105/111, 16:9 (720p,
+      148.5 MHz) 103/111, SXGA (216 MHz) 99/111. Misses are the deliberate
+      overload tests (sprite_overrun/pair, mode5c_overrun) and full-width
+      stacking (text_three640, mode3_16parity, fill_three640*); SXGA also
+      drops mode5c_pair/stack and mode0_win360. SXGA has the least headroom.
+- [x] Odd-address mode 4 sprites draw (were skipped on RP2040); mode4_odd and
+      mode4a_odd clean on hardware.
 - [x] RIA boots to monitor over the VGA console; `STATUS`
 - [x] 6502 runs at 8 MHz (sys 256 MHz, 1.20 V) — Klaus functional tests
       via `tools/pico1/klaus_rom.py`: 6502 test 49 passes / 10 min soak,
