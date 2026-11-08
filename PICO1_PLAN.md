@@ -214,7 +214,12 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 - [x] 6502 runs at 8 MHz (sys 256 MHz, 1.20 V) — Klaus functional tests
       via `tools/pico1/klaus_rom.py`: 6502 test 49 passes / 10 min soak,
       65C02 extended 17 passes, 0 failures, 0 VGA scanline misses
-- [ ] USB keyboard/mouse/gamepad (MSC works: FLASH/LOAD from the stick)
+- [x] USB gamepad: every d-pad/stick direction and button reads correctly
+      (tests/cpu/hid/gamepad.py tester); MSC works (FLASH/LOAD from the stick)
+- [ ] USB keyboard/mouse input (both enumerate; typing/pointer not checked)
+- [x] BLE gamepad: Xbox controller pairs (`SET BLE 2`) and every input reads,
+      alongside the USB pad as P1. First end-to-end proof of the CYW43 on the
+      repacked PIO. Its button labels report GAMEPAD_TYPE_UNKNOWN.
 - [x] `LOAD` a ROM
 - [~] Audio OPL: audio IRQ load on core 0 measured with `tools/pico1/opl_rom.py`
       and the `[AUD …]` debug line. emu8950 skips silent operators
@@ -228,7 +233,7 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       all 8 frequencies rewritten nonstop 46%; no overruns; sounds clean
 - [ ] Audio: bell
 - [x] VSYNC (backchannel trap) arrives; [ ] confirm 60 Hz in a game
-- [ ] WiFi join, NTP, telnet modem; BLE keyboard
+- [ ] WiFi join, NTP, telnet modem; BLE keyboard (BLE gamepad done)
 - [ ] Save settings (flash write) while a program runs and video is active
 - [x] `FLASH` update of RIA and VGA from MSC
 
