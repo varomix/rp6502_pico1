@@ -244,7 +244,9 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       65C02 extended 17 passes, 0 failures, 0 VGA scanline misses
 - [x] USB gamepad: every d-pad/stick direction and button reads correctly
       (tests/cpu/hid/gamepad.py tester); MSC works (FLASH/LOAD from the stick)
-- [ ] USB keyboard/mouse input (both enumerate; typing/pointer not checked)
+- [x] USB keyboard/mouse input (`tools/pico1/hid_rom.py`): typing incl.
+      Enter, Backspace and shifted symbols, mouse movement, buttons and wheel
+      all correct on screen (2026-11-12, checked by eye)
 - [x] BLE gamepad: Xbox controller pairs (`SET BLE 2`) and every input reads,
       alongside the USB pad as P1. First end-to-end proof of the CYW43 on the
       repacked PIO. Its button labels report GAMEPAD_TYPE_UNKNOWN.
@@ -260,7 +262,7 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       sounds clean.
 - [x] Audio PSG (`tools/pico1/psg_rom.py`): idle 21%, 8-voice chord 24%,
       all 8 frequencies rewritten nonstop 46%; no overruns; sounds clean
-- [ ] Audio: bell
+- [x] Audio: bell rings on BEL (Ctrl+G echoed by `hid_rom.py`)
 - [x] VSYNC (backchannel trap) arrives; [ ] confirm 60 Hz in a game
 - [x] WiFi join (-70 dBm, 2.4 GHz), NTP (time + TZ correct), remote console
       over telnet (`SET PORT`/`SET KEY`, passkey, STATUS/HELP), modem
@@ -292,7 +294,16 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       (~1/s). Listening test 2026-11-12: game plays and sounds fine, no
       audible artifacts, so no further emu8950 work for now.
 - [ ] BLE keyboard (BLE gamepad done)
-- [ ] Save settings (flash write) while a program runs and video is active
+- [x] Save settings (flash write) while a program runs and video is active
+      (`tools/pico1/cfgsave_rom.py`): a running program can only write flash
+      through the modem (`AT0:` then `AT&W`/`AT&Z`; plain `AT:` has no slot,
+      so `AT&W` gives ERROR) or BLE bonding. 88 saves in 30 s over an 8-voice
+      PSG chord: 6502 never stalls (VSYNC +20 frames per save), 0 new VGA
+      misses, USB and WiFi fine. Audio: `lfs_prog`/`lfs_erase` run with
+      core 0's IRQs off, so each page program holds 1-4 samples and each
+      sector erase (~every 4 s under this load) drops ~1500 samples, about
+      30 ms. Known limitation; fix would keep RAM-only IRQs (audio, VSYNC,
+      backchannel) enabled during flash ops.
 - [x] `FLASH` update of RIA and VGA from MSC
 
 ### Before release
@@ -318,3 +329,5 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 - 2026-11-12 — WiFi, NTP, telnet console and modem verified. Audio IRQ
   overruns under WiFi traced to flash-resident timer IRQs; moved to RAM.
   RPMegaChopperII runs clean on VGA; its OPL music overloads core 0.
+- 2026-11-12 — USB keyboard, mouse and bell verified by eye; flash saves
+  during a running program are safe apart from ~30 ms audio gaps per erase.
