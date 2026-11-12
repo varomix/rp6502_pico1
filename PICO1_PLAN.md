@@ -285,10 +285,11 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 - [x] RPMegaChopperII (jasonfrowe, v0.1.0 release ROM: three planes, mode 5
       sprites, OPL2 VGM music): 0 VGA scanline misses at 640x480, worst
       line ~163 us.
-- [ ] OPL load in RPMegaChopperII: 82-83% of core 0 per sample, ~50-60 held
+- [x] OPL load in RPMegaChopperII: 82-83% of core 0 per sample, ~50-60 held
       samples/s (`over` 100-160 per 2 s), same with RF off, so it is the
       synth itself, not WiFi. Heavier than the 9-voice synthetic test
-      (~1/s). Listening test, then decide whether emu8950 needs more.
+      (~1/s). Listening test 2026-11-12: game plays and sounds fine, no
+      audible artifacts, so no further emu8950 work for now.
 - [ ] BLE keyboard (BLE gamepad done)
 - [ ] Save settings (flash write) while a program runs and video is active
 - [x] `FLASH` update of RIA and VGA from MSC
