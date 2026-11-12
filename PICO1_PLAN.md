@@ -265,7 +265,21 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 - [x] Audio PSG (`tools/pico1/psg_rom.py`): idle 21%, 8-voice chord 24%,
       all 8 frequencies rewritten nonstop 46%; no overruns; sounds clean
 - [x] Audio: bell rings on BEL (Ctrl+G echoed by `hid_rom.py`)
-- [x] VSYNC (backchannel trap) arrives; [ ] confirm 60 Hz in a game
+- [x] VSYNC (backchannel trap) arrives at 60 Hz: the RIA's VSYNC count
+      timed against the host clock gives 59.96-60.03 Hz idle and while
+      RPMegaChopperII runs (`LOAD`, 45-60 s, stopped with a serial break),
+      on both the Pico W and plain Pico RIA (2026-11-12)
+- [x] Plain Pico 1 RIA (no W, `build.sh pico`): boots and finds the VGA
+      (after one `reboot`), `LOAD`, Klaus 6502 and 65C02 tests at 8 MHz
+      pass, USB keyboards/mouse/gamepad/MSC, audio 0 overruns, VSYNC
+      60 Hz (2026-11-12). Its flash still held `VGA 2` (SXGA) from earlier
+      testing, since loading a UF2 keeps the settings area; at SXGA
+      RPMegaChopperII missed ~3700 lines/s (worst line ~225 us).
+- [x] RPMegaChopperII at 640x480 peaks right at the VGA render limit
+      (worst line 158-165 us): one 60 s run missed 596 lines (~10/s), the
+      next 0, and the user saw no glitch on that one. Scene-dependent
+      headroom, not the RIA type; a known limit unless the mode 5 / plane
+      render gets faster.
 - [x] WiFi join (-70 dBm, 2.4 GHz), NTP (time + TZ correct), remote console
       over telnet (`SET PORT`/`SET KEY`, passkey, STATUS/HELP), modem
       (`tools/pico1/modem_rom.py` bridges console <-> AT:): AT/OK, `ATD
