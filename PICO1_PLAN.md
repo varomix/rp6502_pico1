@@ -295,7 +295,13 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       synth itself, not WiFi. Heavier than the 9-voice synthetic test
       (~1/s). Listening test 2026-11-12: game plays and sounds fine, no
       audible artifacts, so no further emu8950 work for now.
-- [ ] BLE keyboard (BLE gamepad done)
+- [~] BLE keyboard: no LE keyboard on hand. A Targus AKB862 (Bluetooth 5.1,
+      multi-device) never paired: a debug build logging every advertising
+      report (ADV and scan response, name, appearance, HID UUID) saw 37
+      reports in 60 s of pairing and none from a keyboard, so it pairs over
+      Classic Bluetooth, which the RIA does not support (upstream too). The
+      LE HID pairing path itself is proven by the Xbox pad. Retest with a
+      keyboard that pairs over BLE.
 - [x] Save settings (flash write) while a program runs and video is active
       (`tools/pico1/cfgsave_rom.py`): a running program can only write flash
       through the modem (`AT0:` then `AT&W`/`AT&Z`; plain `AT:` has no slot,
@@ -340,3 +346,5 @@ Remaining work is the unchecked hardware items below, then Phase 5.
   during a running program are safe apart from ~30 ms audio gaps per erase.
   Leaving IRQs on during flash ops fixed the gap but corrupted data, so it
   was reverted. `upload.py` restarts an upload when a chunk is rejected.
+  Targus AKB862 keyboard is Classic Bluetooth only, so it cannot pair.
+  Async console output (BLE logs, debug lines) during UPLOAD breaks it.
