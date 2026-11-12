@@ -4,7 +4,8 @@
   cfgsave_rom.py <out_dir>
 
 Starts the psg_rom.py eight-voice chord, opens AT0: and sends AT&W (save the
-modem settings to littlefs) over and over, printing each reply and the VSYNC
+modem settings to littlefs) over and over, each once the modem has been
+quiet for QUIET frames, printing each reply, any short write and the VSYNC
 frame counter, so a stalled 6502, VSYNC or modem shows in the log. On the
 RP2040 each flash program/erase runs with core 0's interrupts off.
 """
@@ -21,6 +22,7 @@ VSYNC = 0xFFE3
 FD = 0x0200
 WAITVS = 0x0201
 SAVES = 0x0202
+QUIET = 12          # frames of modem silence before the next command
 
 
 def cfgsave():
@@ -37,16 +39,12 @@ def cfgsave():
     p.store(SAVES, 0)
 
     p.symbol("again")
-    for c in reversed(b"AT&W\r"):
-        p.push(c)
-    p.lda_abs(FD)
-    p.sta_abs(API_A)
-    p.call(OP_WRITE_XSTACK)
-    p.inc_abs(SAVES)
-    # Print modem output for 20 frames.
+    # Wait until the modem has been quiet for QUIET frames, so a command is
+    # never sent while the last one's reply is still coming.
+    p.symbol("quiet")
     p.lda_abs(VSYNC)
     p.clc()
-    p.adc_imm(20)
+    p.adc_imm(QUIET)
     p.sta_abs(WAITVS)
     p.symbol("drain")
     p.push(0)
@@ -58,9 +56,24 @@ def cfgsave():
     with p.branch("beq"):
         p.lda_abs(XSTACK)
         p.jsr_abs("putc")
+        p.jmp_abs("quiet")
     p.lda_abs(VSYNC)
     p.cmp_abs(WAITVS)
     p.bne("drain")
+
+    for c in reversed(b"AT&W\r"):
+        p.push(c)
+    p.lda_abs(FD)
+    p.sta_abs(API_A)
+    p.call(OP_WRITE_XSTACK)
+    p.cmp_imm(5)                    # bytes the modem took
+    with p.branch("beq"):
+        p.pha()
+        p.say("[short ")
+        p.pla()
+        p.jsr_abs("puthex")
+        p.say("]\r\n")
+    p.inc_abs(SAVES)
     p.say("[save ")
     p.lda_abs(SAVES)
     p.jsr_abs("puthex")

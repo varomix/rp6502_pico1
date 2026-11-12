@@ -33,26 +33,42 @@ def write_all(data):
         try: n = os.write(fd, view); view = view[n:]
         except BlockingIOError: select.select([], [fd], [], 0.5)
 
-read_until([b"\xff"], 0.3)  # drain
-write_all(b"\r"); read_until([b"]"], 2)
-# After the prompt the monitor probes the terminal (ESC[6n, ESC[>c) and reads
-# the reply for a moment; keys typed then are eaten as the reply. Let it settle.
-read_until([b"\xff"], 0.6)
-write_all(f"UPLOAD {a.remote}\r".encode())
-out, m = read_until([b"}", b"\n?"], 5)
-if m != b"}": sys.exit(f"UPLOAD refused: {out!r}")
-data = open(a.local, "rb").read()
-t0 = time.time()
-for off in range(0, len(data), 1024):
-    chunk = data[off:off + 1024]
-    write_all(f"${len(chunk):X} ${zlib.crc32(chunk):08X}\r".encode())
-    time.sleep(0.01)
-    write_all(chunk)
-    out, m = read_until([b"}", b"\n?"], 10)
+def upload(data):
+    """One UPLOAD session. Returns None on success, else what went wrong."""
+    read_until([b"\xff"], 0.3)  # drain
+    write_all(b"\r"); read_until([b"]"], 2)
+    # After the prompt the monitor probes the terminal (ESC[6n, ESC[>c) and reads
+    # the reply for a moment; keys typed then are eaten as the reply. Let it settle.
+    read_until([b"\xff"], 0.6)
+    write_all(f"UPLOAD {a.remote}\r".encode())
+    out, m = read_until([b"}", b"\n?"], 5)
     if m != b"}":
-        sys.exit(f"\nchunk at {off} failed: {out[-1200:]!r}")
-    done = off + len(chunk)
-    sys.stdout.write(f"\r{done}/{len(data)} bytes  {done/(time.time()-t0)/1024:.1f} KB/s"); sys.stdout.flush()
+        return f"UPLOAD refused: {out!r}"
+    t0 = time.time()
+    for off in range(0, len(data), 1024):
+        chunk = data[off:off + 1024]
+        write_all(f"${len(chunk):X} ${zlib.crc32(chunk):08X}\r".encode())
+        time.sleep(0.01)
+        write_all(chunk)
+        out, m = read_until([b"}", b"\n?"], 10)
+        if m != b"}":
+            return f"chunk at {off} failed: {out[-1200:]!r}"
+        done = off + len(chunk)
+        sys.stdout.write(f"\r{done}/{len(data)} bytes  {done/(time.time()-t0)/1024:.1f} KB/s"); sys.stdout.flush()
+    return None
+
+
+# A chunk the RIA rejects (rarely, a byte lost on the console UART) ends the
+# UPLOAD session and there is no resume, so the whole file is sent again.
+data = open(a.local, "rb").read()
+for attempt in range(3):
+    err = upload(data)
+    if not err:
+        break
+    print(f"\nattempt {attempt + 1}: {err}")
+    write_all(b"\r"); read_until([b"\xff"], 1.5)
+else:
+    sys.exit("upload failed 3 times")
 write_all(b"END\r"); read_until([b"]"], 5)
 print("\nupload complete")
 for c in a.then:

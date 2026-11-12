@@ -304,8 +304,13 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       misses, USB and WiFi fine. Audio: `lfs_prog`/`lfs_erase` run with
       core 0's IRQs off, so each page program holds 1-4 samples and each
       sector erase (~every 4 s under this load) drops ~1500 samples, about
-      30 ms. Known limitation; fix would keep RAM-only IRQs (audio, VSYNC,
-      backchannel) enabled during flash ops.
+      30 ms. Known limitation, and it has to stay: keeping RAM-only IRQs
+      (audio, VSYNC, backchannel) enabled during flash ops was tried
+      2026-11-12 and removed the gap, but corrupted the modem's echo of
+      AT&W (~1 in 5 with all four kept, 11/180 with audio alone, 1/194 with
+      all masked). Interrupting the boot ROM's SSI flash program/erase is not
+      safe on the RP2040, so `lfs_prog`/`lfs_erase` keep masking all of
+      core 0's IRQs. Don't retry this without a flash read-back check.
 - [x] `FLASH` update of RIA and VGA from MSC
 
 ### Before release
@@ -333,3 +338,5 @@ Remaining work is the unchecked hardware items below, then Phase 5.
   RPMegaChopperII runs clean on VGA; its OPL music overloads core 0.
 - 2026-11-12 — USB keyboard, mouse and bell verified by eye; flash saves
   during a running program are safe apart from ~30 ms audio gaps per erase.
+  Leaving IRQs on during flash ops fixed the gap but corrupted data, so it
+  was reverted. `upload.py` restarts an upload when a chunk is rejected.
