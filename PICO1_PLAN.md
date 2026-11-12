@@ -77,36 +77,39 @@ Each phase ends with something flashable and tested on real hardware.
 
 ### Phase 2 — VGA on RP2040
 Least risk; VGA worked on RP2040 up to upstream v0.9.
-- [ ] Fit RAM (64 KB XRAM mirror + scanline buffers + code). If `copy_to_ram`
+- [x] Fit RAM (64 KB XRAM mirror + scanline buffers + code). If `copy_to_ram`
       overflows, switch to the default flash binary and mark the render
       path `__not_in_flash_func` / `.time_critical`.
       **Caveat:** `vga/sys/flash.c` erases flash while core 1 renders — core 1
       code and data must be 100 % in RAM. Audit with the map file.
-- [ ] Verify sys clocks 201.6 / 216 / 148.5 MHz lock on RP2040 (vreg 1.20 V).
-- [ ] Test each mode (0 console, 1 tile, 2 char, 3 bitmap, 4 sprite,
+- [x] Verify sys clocks lock on RP2040: 640x480 needed 252 MHz / 1.25 V
+      (201.6 MHz missed scanlines); 216 and 148.5 MHz at 1.20 V.
+- [x] Test each mode (0 console, 1 tile, 2 char, 3 bitmap, 4 sprite,
       5 affine) at 640×480 and 1280×720; profile scanline render time on
       the M0+. Use the RP2040 interpolators (already linked) for hot loops.
-- [ ] Document which modes/resolutions don't keep up; degrade gracefully.
+- [x] Document which modes/resolutions don't keep up (§5 checklist,
+      README known limits): only overload/stacking tests and the busiest
+      game scenes miss, most at SXGA; a miss shows a blank (blue) line.
 
 ### Phase 3 — RIA (no radio) on RP2040
-- [ ] RAM: move from `copy_to_ram` to flash-resident build with only the
+- [x] RAM: move from `copy_to_ram` to flash-resident build with only the
       hot paths in RAM:
       - core 1 `act_loop` + everything it calls (6502 bus actions),
       - IRQ handlers (PIO, DMA, PWM audio, USB),
       - audio mixer inner loops.
       Everything that runs while flash is being written (`PICO_FLASH_ASSUME_CORE1_SAFE`)
       must be RAM-resident. Verify with `arm-none-eabi-nm` + map.
-- [ ] Use `tests/fwsize.py` to find the biggest RAM consumers; trim buffers
+- [x] Use `tests/fwsize.py` to find the biggest RAM consumers; trim buffers
       that were sized for 520 KB.
-- [ ] Clock: try 256 MHz at 1.20 V → 1.25 V → 1.30 V. If a given chip
+- [x] Clock: 256 MHz holds at 1.20 V on every chip tried. Was: try 256 MHz at 1.20 V → 1.25 V → 1.30 V. If a given chip
       won't hold 256 MHz, fall back to 240/200 MHz and lower `PHI2_MAX_KHZ`
       (sys/32) — 6502 then tops out at 7.5 / 6.25 MHz.
-- [ ] PIO: pio0+pio1 as today (no change needed without radio).
-- [ ] Audio: `emu8950` OPL on M0+ (no FPU/DSP) is the CPU risk. Measure
+- [x] PIO: pio0+pio1 as today (no change needed without radio).
+- [x] Audio: `emu8950` OPL on M0+ (no FPU/DSP) is the CPU risk. Measure
       core-0 load. Options if too slow: lower OPL internal rate, fixed-point
       hot loops, or make OPL an optional build flag.
-- [ ] USB host keyboard/mouse/gamepad/MSC — validate the RP2040 SOF path.
-- [ ] Test: boot, monitor, `LOAD` ROMs, 6502 functional test at 8 MHz.
+- [x] USB host keyboard/mouse/gamepad/MSC — validate the RP2040 SOF path.
+- [x] Test: boot, monitor, `LOAD` ROMs, 6502 functional test at 8 MHz.
 
 ### Phase 4 — RIA-W (WiFi / BLE / modem / NTP) on Pico W
 The hard part: the CYW43 gSPI driver needs one PIO SM + ~10 instructions,
@@ -121,16 +124,29 @@ Options, in order of preference:
 3. **Time-share** — CYW43 transactions are bursty; loading its program on
    demand is fragile, last resort.
 4. **Bit-banged gSPI on core 0** — no PIO needed, slower WiFi; fallback.
-- [ ] RAM: lwIP + BTstack + CYW43 firmware blob (in flash via
+- [x] RAM: lwIP + BTstack + CYW43 firmware blob (in flash via
       `CYW43_RESOURCE_ATTRIBUTE __in_flash`) — expect to cut pbuf pools,
       maybe make BLE optional (`RP6502_BLE=0`).
-- [ ] `ria-w/net/cyw.c` PIO clock divider uses `SYS_RP2350_KHZ` — re-tune.
-- [ ] Test: WiFi join, NTP, telnet modem, BLE keyboard.
+- [x] `ria-w/net/cyw.c` PIO clock divider uses `SYS_RP2350_KHZ` (4 at 256 MHz).
+- [x] Test: WiFi join, NTP, telnet modem. BLE keyboard untested: both
+      keyboards on hand pair over Classic Bluetooth only.
 
 ### Phase 5 — Polish & release
-- [ ] Release script producing `rp6502-pico1-<ver>-{ria,ria-w,vga}.uf2`.
-- [ ] README section: what works, measured max PHI2, known limits.
-- [ ] Upstream sync procedure (rebase onto picocomputer/rp6502 tags).
+- [x] Debug output off in release builds: development aids behind
+      `RP6502_PICO1_DEBUG` (`PICO1_DEBUG=1 tools/pico1/build.sh`), one-off
+      audio instrumentation and `PICO1_BC_SPLIT` removed.
+- [x] Release script: `tools/pico1/release.sh <ver>` writes
+      `build/release/rp6502-pico1-<ver>-{ria,ria-w,vga}.uf2` + SHA256SUMS.
+      0.1 ria + vga flashed on hardware: versions shown, no debug lines,
+      Klaus tests pass, RPMegaChopperII runs (2026-11-12). ria-w not yet.
+- [x] README section: what works, clocks, known limits, building.
+- [x] Host test suite: 132/133 pass; the one failure,
+      `drive.fs_rom_open_is_the_one_way_in` (test_drive.c:58), fails the
+      same way on upstream ad6293c on macOS, so it is not from the port.
+- Upstream fixes: the fork is Pico 1 only and not kept mergeable, so
+  upstream changes are cherry-picked or merged by hand when wanted
+  (`git fetch upstream`, base ad6293c), then rebuilt with `build.sh` (its
+  flash checks catch new hot-path code left in flash) and the host suite.
 
 ---
 
@@ -147,11 +163,11 @@ Options, in order of preference:
 
 ---
 
-## 5. Status (2026-11-08)
+## 5. Status (2026-11-12)
 
-All of Phases 1–4 are **implemented and building**. RIA-W + VGA boot on real
-Pico 1 W / Pico 1 hardware, load ROMs, and update each other with `FLASH`.
-Remaining work is the unchecked hardware items below, then Phase 5.
+All phases are done and verified on hardware (plain Pico and Pico W RIA,
+Pico VGA). Release builds come from `tools/pico1/release.sh`. Open: a BLE
+keyboard test, which needs a keyboard that pairs over Bluetooth LE.
 
 ### Verified on hardware (2026-11-06)
 - VGA 640×480 at **252 MHz / 1.25 V** (10× pixel clock). At 201.6 MHz the
@@ -335,14 +351,6 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       core 0's IRQs. Don't retry this without a flash read-back check.
 - [x] `FLASH` update of RIA and VGA from MSC
 
-### Before release
-- Gate or remove debug: VGA per-page FLASH lines, missed-scanline prints,
-  capture commands (`sys/cap.c`), backchannel counters in `STATUS`,
-  `PICO1_BC_SPLIT`, the `[AUD …]` line / `aud_status_response` /
-  `aud_dbg_task`, the `AUDlate` / `IRQ` STATUS lines and `aud_irq_entry`
-  trampoline, `EMU8950_PROF` section timing, and the VGA
-  `[vgaw …]` worst-line per-plane timing (and com_dbg_out's bool).
-
 ## 6. Log
 
 - 2026-11-06 — Plan written. Fork cloned, toolchain installed.
@@ -364,3 +372,7 @@ Remaining work is the unchecked hardware items below, then Phase 5.
   was reverted. `upload.py` restarts an upload when a chunk is rejected.
   Targus AKB862 keyboard is Classic Bluetooth only, so it cannot pair.
   Async console output (BLE logs, debug lines) during UPLOAD breaks it.
+- 2026-11-12 — VSYNC measured at 60 Hz in a game. Plain Pico RIA verified
+  (it had kept SXGA from earlier tests, hence heavy blue lines at first).
+  Keychron K4 also Classic-only; BLE keyboard set aside. Phase 5: debug
+  output gated/removed, release.sh, README; 0.1 ria + vga images verified on hardware.

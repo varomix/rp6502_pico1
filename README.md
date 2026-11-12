@@ -11,6 +11,71 @@ https://picocomputer.github.io/
 Pre-built firmware and executables:<br>
 https://github.com/picocomputer/
 
+## This fork: Raspberry Pi Pico 1 (RP2040)
+
+This fork runs the Picocomputer firmware on the original Raspberry Pi Pico
+and Pico W (RP2040) instead of the Pico 2 (RP2350). The circuit is the same
+reference design with Pico 1 boards in the two sockets. Only the RP2040 is
+maintained here; for a Pico 2 build use upstream
+[picocomputer/rp6502](https://github.com/picocomputer/rp6502).
+
+| Image | Board | Notes |
+|---|---|---|
+| `rp6502-pico1-<ver>-ria-w.uf2` | Pico W as the RIA | WiFi, NTP, telnet console, modem, Bluetooth LE |
+| `rp6502-pico1-<ver>-ria.uf2` | Pico as the RIA | no radio |
+| `rp6502-pico1-<ver>-vga.uf2` | Pico as the VGA | |
+
+**Installing.** The first time, hold BOOTSEL while plugging each Pico into a
+computer and copy its `.uf2` onto the `RPI-RP2` drive. After that, put the
+`.uf2` files on a USB drive and run `FLASH MSC0:/file.uf2` in the monitor; it
+updates the RIA, or the VGA through the RIA. A newly installed RIA keeps the
+settings it had before, including `SET VGA`.
+
+**What works.** Verified on hardware: the 6502 at 8 MHz (Klaus Dormann's 6502
+and 65C02 functional tests), `LOAD`, `FLASH`, all VGA modes and display types,
+VSYNC at 60 Hz, PSG and OPL2 audio, the bell, USB keyboard, mouse, gamepad and
+drive, Bluetooth LE gamepads, WiFi, NTP, the telnet console and the modem.
+Games tested include Quarry, RPMegaChopperII and Space Invaders.
+
+**Clocks.** The RP2040 is rated for 133 MHz; this port overclocks it. The RIA
+runs at 256 MHz (1.20 V), which the 8 MHz 6502 needs (PHI2 is the system
+clock divided by 32). The VGA runs at 252 MHz (1.25 V) for 640x480, 216 MHz for
+1280x1024 and 148.5 MHz for 1280x720. Every board tested held these. If a RIA
+is unstable, raise `SYS_RP2350_VREG` in `src/host/pico/ria/sys/rp2350.c` to
+1.25 V or 1.30 V.
+
+**Known limits.**
+- 8 MHz is the 6502's maximum.
+- The VGA has less rendering headroom than on the Pico 2. The busiest scenes
+  of heavy games can show brief blue lines (missed scanlines), most of all at
+  1280x1024 (`SET VGA 2`). 640x480 has the most headroom.
+- OPL2 music uses most of a RIA core. Very busy music occasionally repeats a
+  sample, which is inaudible in the games tested.
+- Audio pauses for about 30 ms when a running program saves settings to flash
+  (the modem's `AT&W`, or Bluetooth pairing). The RP2040 can't run interrupts
+  during a flash erase.
+- Bluetooth keyboards, mice and gamepads must pair over Bluetooth LE (as
+  upstream). Classic-only keyboards, including many multi-device ones, never
+  show up.
+- Pasting into the console at full speed can drop characters, as upstream.
+
+**Building.** With the Pico SDK 2.x and its toolchain installed (the VS Code
+extension puts them in `~/.pico-sdk`):
+```
+$ tools/pico1/build.sh pico_w        # RIA-W + VGA into build/pico_w
+$ tools/pico1/build.sh pico          # RIA + VGA into build/pico
+$ tools/pico1/release.sh 0.1         # all three release images into build/release
+```
+`build.sh` also checks that nothing the 6502 bus core or the VGA render
+path can reach is left in flash. `PICO1_DEBUG=1 tools/pico1/build.sh pico_w`
+builds a development image that prints render timing and missed scanlines on
+the VGA's USB console for the scripts in `tools/pico1`. `PICO1_PLAN.md` has
+the port's notes and test log. Upstream's host test suite
+(`src/host/libretro`, `ctest`) builds the VGA modes and the OPL emulator with
+their RP2040 code paths.
+
+## Upstream
+
 This project is for building emulation or firmware. For writing 6502 software, see
 [picocomputer/rp6502-sdk](https://github.com/picocomputer/rp6502-sdk), which
 builds with either cc65 or llvm-mos and gets its tools from `tools/` here.
