@@ -249,14 +249,15 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       alongside the USB pad as P1. First end-to-end proof of the CYW43 on the
       repacked PIO. Its button labels report GAMEPAD_TYPE_UNKNOWN.
 - [x] `LOAD` a ROM
-- [~] Audio OPL: audio IRQ load on core 0 measured with `tools/pico1/opl_rom.py`
+- [x] Audio OPL: audio IRQ load on core 0 measured with `tools/pico1/opl_rom.py`
       and the `[AUD …]` debug line. emu8950 skips silent operators
       (`EMU8950_SKIP_SILENT`, sample-exact vs. the full path) and force-inlines
       the channel helpers; IRQ drains ≤4 writes/sample; an overrun makes the
       next IRQ hold the level (no more core-0 lockups — `oplspam` used to hang
       the RIA). Idle 43%, 1 voice 48%, rhythm 75%, 9 voices 84% (~1 held
-      sample/s). `-O2` was slower than `-Os` here. Open: listening test, and
-      whether USB/WiFi cope with ~16% of core 0 at 9 voices.
+      sample/s). `-O2` was slower than `-Os` here. Closed 2026-11-12 by
+      RPMegaChopperII (below): OPL music at 82% with USB pads and WiFi up
+      sounds clean.
 - [x] Audio PSG (`tools/pico1/psg_rom.py`): idle 21%, 8-voice chord 24%,
       all 8 frequencies rewritten nonstop 46%; no overruns; sounds clean
 - [ ] Audio: bell
