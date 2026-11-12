@@ -261,7 +261,17 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       all 8 frequencies rewritten nonstop 46%; no overruns; sounds clean
 - [ ] Audio: bell
 - [x] VSYNC (backchannel trap) arrives; [ ] confirm 60 Hz in a game
-- [ ] WiFi join, NTP, telnet modem; BLE keyboard (BLE gamepad done)
+- [x] WiFi join (-70 dBm, 2.4 GHz), NTP (time + TZ correct), remote console
+      over telnet (`SET PORT`/`SET KEY`, passkey, STATUS/HELP), modem
+      (`tools/pico1/modem_rom.py` bridges console <-> AT:): AT/OK, `ATD
+      host:port` CONNECT, 200 typed bytes and a 3.4 KB block from the host
+      both intact, `+++` escape, `ATH`. 0 VGA scanline misses throughout.
+      A console paste at full 115200 outruns a 1-byte-per-segment writer and
+      overflows the 32-byte RIA UART ring (same size upstream).
+- [ ] Audio IRQ overruns during WiFi activity: `over` went 1 -> 7 across the
+      telnet/modem session with no audio device selected (max 5128/5149
+      clk). Check whether CYW43/lwIP holds off the audio IRQ on core 0.
+- [ ] BLE keyboard (BLE gamepad done)
 - [ ] Save settings (flash write) while a program runs and video is active
 - [x] `FLASH` update of RIA and VGA from MSC
 
