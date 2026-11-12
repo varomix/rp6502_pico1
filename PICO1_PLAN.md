@@ -300,8 +300,10 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       report (ADV and scan response, name, appearance, HID UUID) saw 37
       reports in 60 s of pairing and none from a keyboard, so it pairs over
       Classic Bluetooth, which the RIA does not support (upstream too). The
-      LE HID pairing path itself is proven by the Xbox pad. Retest with a
-      keyboard that pairs over BLE.
+      LE HID pairing path itself is proven by the Xbox pad. A Keychron K4
+      (K4J3, Broadcom) behaved the same on 2026-11-12: no LE advertising in
+      60 s of logging. No LE keyboard available, so this is set aside; the
+      README will say BLE keyboards must pair over LE.
 - [x] Save settings (flash write) while a program runs and video is active
       (`tools/pico1/cfgsave_rom.py`): a running program can only write flash
       through the modem (`AT0:` then `AT&W`/`AT&Z`; plain `AT:` has no slot,
