@@ -268,9 +268,27 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       both intact, `+++` escape, `ATH`. 0 VGA scanline misses throughout.
       A console paste at full 115200 outruns a 1-byte-per-segment writer and
       overflows the 32-byte RIA UART ring (same size upstream).
-- [ ] Audio IRQ overruns during WiFi activity: `over` went 1 -> 7 across the
-      telnet/modem session with no audio device selected (max 5128/5149
-      clk). Check whether CYW43/lwIP holds off the audio IRQ on core 0.
+- [x] Audio IRQ overruns during WiFi activity (1 -> 7 per modem session, none
+      with ping floods, telnet, flash writes or console input). Cause: the
+      timer IRQ handlers ran from flash. The CYW43 send path sleeps on the
+      SDK alarm pool, and `alarm_pool_irq_handler` / the VGA vsync
+      `hardware_alarm_irq_handler` (priority 0x40, above audio) then
+      cache-missed behind lwIP/CYW43 code for 12-16 us. Found with a PC log
+      on late audio entries (`AUDlate` in STATUS) and an enabled-IRQ dump
+      (`IRQ` lines). `hardware_timer/timer.c` and `pico_time/time.c` now
+      live in RAM: modem send 92 late / 7 over -> 2 late / 0 over, full
+      modem session max 5137 -> 2056 clk. The 2 left are `get_rand_64`
+      (pico_rand masks IRQs for ROSC samples, once per TCP connect, ~4400
+      clk, inside the period).
+      Note: on the M0+ only the top two priority bits exist, so audio's
+      `DEFAULT + 0x10` equals the default level, not below it.
+- [x] RPMegaChopperII (jasonfrowe, v0.1.0 release ROM: three planes, mode 5
+      sprites, OPL2 VGM music): 0 VGA scanline misses at 640x480, worst
+      line ~163 us.
+- [ ] OPL load in RPMegaChopperII: 82-83% of core 0 per sample, ~50-60 held
+      samples/s (`over` 100-160 per 2 s), same with RF off, so it is the
+      synth itself, not WiFi. Heavier than the 9-voice synthetic test
+      (~1/s). Listening test, then decide whether emu8950 needs more.
 - [ ] BLE keyboard (BLE gamepad done)
 - [ ] Save settings (flash write) while a program runs and video is active
 - [x] `FLASH` update of RIA and VGA from MSC
@@ -279,7 +297,8 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 - Gate or remove debug: VGA per-page FLASH lines, missed-scanline prints,
   capture commands (`sys/cap.c`), backchannel counters in `STATUS`,
   `PICO1_BC_SPLIT`, the `[AUD …]` line / `aud_status_response` /
-  `aud_dbg_task`, `EMU8950_PROF` section timing, and the VGA
+  `aud_dbg_task`, the `AUDlate` / `IRQ` STATUS lines and `aud_irq_entry`
+  trampoline, `EMU8950_PROF` section timing, and the VGA
   `[vgaw …]` worst-line per-plane timing (and com_dbg_out's bool).
 
 ## 6. Log
@@ -294,3 +313,6 @@ Remaining work is the unchecked hardware items below, then Phase 5.
 - 2026-11-08 — Plan status refreshed. 8 MHz 6502 verified: Klaus 6502 and
   65C02 functional tests pass continuously at 1.20 V (10 min soak, 0 errors).
   `upload.py` waits out the monitor's terminal probe after the prompt.
+- 2026-11-12 — WiFi, NTP, telnet console and modem verified. Audio IRQ
+  overruns under WiFi traced to flash-resident timer IRQs; moved to RAM.
+  RPMegaChopperII runs clean on VGA; its OPL music overloads core 0.

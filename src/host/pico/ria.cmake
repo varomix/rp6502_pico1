@@ -237,6 +237,11 @@ if(PICO_RP2040)
         ${RP6502_ROOT}/vendor/tinyusb_rp6502/rp2040_usb.c
         ${RP6502_ROOT}/vendor/tinyusb/src/common/tusb_fifo.c
         ${PICO_SDK_PATH}/src/rp2_common/pico_atomic/atomic.c
+        # Timer IRQs (the VGA vsync alarm, the SDK alarm pool that sleep_ms
+        # and the CYW43 driver wait on): from flash they cache-miss behind
+        # lwIP/CYW43 code and hold off the audio IRQ for 15+ us.
+        ${PICO_SDK_PATH}/src/rp2_common/hardware_timer/timer.c
+        ${PICO_SDK_PATH}/src/common/pico_time/time.c
     )
     set_property(SOURCE ${RP6502_RIA_RAM_SOURCES}
         TARGET_DIRECTORY ${RIA_TARGET}
