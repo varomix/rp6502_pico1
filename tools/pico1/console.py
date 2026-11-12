@@ -11,7 +11,8 @@ import argparse, glob, os, select, sys, termios, time, tty
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--port")
-ap.add_argument("--wait", type=float, default=1.5)
+ap.add_argument("--wait", type=float, default=0.8,
+                help="seconds of quiet that end a command; under 1 s, as the VGA prints a debug line every second")
 ap.add_argument("--max", type=float, default=30, help="max seconds per command")
 ap.add_argument("cmds", nargs="*")
 a = ap.parse_args()
