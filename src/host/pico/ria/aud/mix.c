@@ -15,9 +15,6 @@
 #include <pico/stdlib.h>
 #include <hardware/pwm.h>
 #include <hardware/clocks.h>
-#include <hardware/irq.h>
-#include <stdio.h>
-#include <string.h>
 
 /* Pico 1 port: the RP2040 has a single PWM wrap IRQ. */
 #if PICO_RP2040 && !defined(PWM_IRQ_WRAP_0)
@@ -63,25 +60,6 @@ static void aud_drain(void)
 static uint16_t aud_level_l = AUD_PWM_CENTER;
 static uint16_t aud_level_r = AUD_PWM_CENTER;
 
-#if PICO_RP2040
-/* Pico 1 port debug: the IRQ slice counts system clocks from its wrap, so its
- * counter at the end of aud_irq is the cycles the sample took, interrupt
- * latency included. A wrap flag already set again on exit is a lost sample.
- * STATUS prints and clears these. */
-static volatile uint32_t aud_dbg_n, aud_dbg_sum, aud_dbg_max, aud_dbg_over, aud_dbg_skip;
-extern uint32_t emu8950_prof[3];
-
-/* Late-entry log: aud_irq_entry saves the PC the interrupt returns to, which
- * is the instruction after whatever held it off (a cpsie) or, when it nested,
- * inside the interrupt that did. Samples entered over half a period late, or
- * that overran, keep that PC and the entry count. STATUS prints and clears. */
-#define AUD_DBG_LATE 6
-__attribute__((used)) volatile uint32_t aud_dbg_entry_pc;
-static volatile uint32_t aud_dbg_late_pc[AUD_DBG_LATE];
-static volatile uint16_t aud_dbg_late_cnt[AUD_DBG_LATE];
-static volatile uint32_t aud_dbg_late_n;
-#endif
-
 /* Set when a sample overran its period. The next interrupt then only writes
  * the held level, so an overloaded engine costs a held sample, never all of
  * core 0. */
@@ -92,11 +70,8 @@ static bool aud_overran;
  * generators take after it. The narrowing from sixteen bits to ten rounds
  * rather than floors, because a floor biases every sample down by half a
  * step on average, which is a DC offset and not noise. */
-__attribute__((used)) void __isr __time_critical_func(aud_irq)(void)
+static void __isr __time_critical_func(aud_irq)(void)
 {
-#if PICO_RP2040
-    const uint32_t entry = pwm_get_counter(AUD_IRQ_SLICE);
-#endif
     pwm_set_chan_level(AUD_L_SLICE, AUD_L_CHAN, aud_level_l);
     pwm_set_chan_level(AUD_R_SLICE, AUD_R_CHAN, aud_level_r);
     pwm_clear_irq(AUD_IRQ_SLICE);
@@ -104,9 +79,6 @@ __attribute__((used)) void __isr __time_critical_func(aud_irq)(void)
     if (aud_overran)
     {
         aud_overran = false;
-#if PICO_RP2040
-        aud_dbg_skip++;
-#endif
         return;
     }
 
@@ -140,104 +112,7 @@ __attribute__((used)) void __isr __time_critical_func(aud_irq)(void)
     aud_level_l = (uint16_t)(nl + AUD_PWM_CENTER);
     aud_level_r = (uint16_t)(nr + AUD_PWM_CENTER);
     aud_overran = pwm_hw->intr & (1u << AUD_IRQ_SLICE);
-#if PICO_RP2040
-    const uint32_t c = pwm_get_counter(AUD_IRQ_SLICE);
-    if (pwm_hw->intr & (1u << AUD_IRQ_SLICE))
-        aud_dbg_over++;
-    if (entry > (pwm_hw->slice[AUD_IRQ_SLICE].top + 1) / 2 || (pwm_hw->intr & (1u << AUD_IRQ_SLICE)))
-    {
-        const uint32_t i = aud_dbg_late_n++ % AUD_DBG_LATE;
-        aud_dbg_late_pc[i] = aud_dbg_entry_pc;
-        aud_dbg_late_cnt[i] = (uint16_t)entry;
-    }
-    aud_dbg_n++;
-    aud_dbg_sum += c;
-    if (c > aud_dbg_max)
-        aud_dbg_max = c;
-#endif
 }
-
-#if PICO_RP2040
-/* Thread mode runs on MSP, so the stacked PC is at MSP+24 on entry. */
-__attribute__((naked)) void __time_critical_func(aud_irq_entry)(void)
-{
-    __asm volatile(
-        "mrs r0, msp\n"
-        "ldr r1, [r0, #24]\n"
-        "ldr r2, =aud_dbg_entry_pc\n"
-        "str r1, [r2]\n"
-        "ldr r0, =aud_irq\n"
-        "bx r0\n"
-        ".ltorg\n");
-}
-
-int aud_status_response(char *buf, size_t buf_size, int state, unsigned width)
-{
-    (void)width;
-    if (state == 1)
-    {
-        irq_set_enabled(PWM_IRQ_WRAP_0, false);
-        const uint32_t ln = aud_dbg_late_n;
-        uint32_t pc[AUD_DBG_LATE];
-        uint16_t cnt[AUD_DBG_LATE];
-        for (int i = 0; i < AUD_DBG_LATE; i++)
-            pc[i] = aud_dbg_late_pc[i], cnt[i] = aud_dbg_late_cnt[i];
-        aud_dbg_late_n = 0;
-        irq_set_enabled(PWM_IRQ_WRAP_0, true);
-        int n = snprintf(buf, buf_size, "AUDlate %lu", (unsigned long)ln);
-        const uint32_t shown = ln < AUD_DBG_LATE ? ln : AUD_DBG_LATE;
-        for (uint32_t k = 0; k < shown && n < (int)buf_size; k++)
-        {
-            const uint32_t i = (ln - shown + k) % AUD_DBG_LATE;
-            n += snprintf(buf + n, buf_size - n, " %08lx/%u", (unsigned long)pc[i], cnt[i]);
-        }
-        if (n < (int)buf_size - 1)
-            buf[n++] = '\n', buf[n] = 0;
-        return 2;
-    }
-    if (state >= 2)
-    {
-        /* Enabled IRQs: number:priority:handler, a few per line. */
-        int n = snprintf(buf, buf_size, "IRQ");
-        int irq = state - 2;
-        for (; irq < 32 && n < (int)buf_size - 24; irq++)
-            if (irq_is_enabled(irq))
-                n += snprintf(buf + n, buf_size - n, " %d:%02x:%08lx", irq, irq_get_priority(irq),
-                              (unsigned long)irq_get_vtable_handler(irq));
-        buf[n++] = '\n', buf[n] = 0;
-        return irq < 32 ? irq + 2 : -1;
-    }
-    const uint32_t period = pwm_hw->slice[AUD_IRQ_SLICE].top + 1;
-    irq_set_enabled(PWM_IRQ_WRAP_0, false);
-    const uint32_t n = aud_dbg_n, sum = aud_dbg_sum, max = aud_dbg_max, over = aud_dbg_over,
-                   skip = aud_dbg_skip;
-    uint32_t prof[3];
-    for (int i = 0; i < 3; i++)
-        prof[i] = emu8950_prof[i], emu8950_prof[i] = 0;
-    aud_dbg_n = aud_dbg_sum = aud_dbg_max = aud_dbg_over = aud_dbg_skip = 0;
-    irq_set_enabled(PWM_IRQ_WRAP_0, true);
-    const uint32_t avg = n ? sum / n : 0;
-    const uint32_t ns = n ? n : 1;
-    snprintf(buf, buf_size, "AUD dev=%d n=%lu avg=%lu max=%lu /%lu clk (%lu%%) over=%lu skip=%lu"
-                            " opl pre=%lu slot=%lu ch=%lu\n",
-             (int)aud_dev, (unsigned long)n, (unsigned long)avg, (unsigned long)max,
-             (unsigned long)period, (unsigned long)(avg * 100 / period),
-             (unsigned long)over, (unsigned long)skip, (unsigned long)(prof[0] / ns),
-             (unsigned long)(prof[1] / ns), (unsigned long)(prof[2] / ns));
-    return 1;
-}
-
-void aud_dbg_task(void)
-{
-    static uint32_t next;
-    if (aud_dev == aud_dev_none || (int32_t)(time_us_32() - next) < 0)
-        return;
-    next = time_us_32() + 2000000;
-    char buf[160];
-    aud_status_response(buf, sizeof buf, 0, 0);
-    printf("\r\n[%.*s]\r\n", (int)strcspn(buf, "\n"), buf);
-}
-#endif
 
 void __in_flash("aud_init") aud_init(void)
 {
@@ -267,11 +142,7 @@ void __in_flash("aud_init") aud_init(void)
      * their 250 kHz carrier does not change with the IRQ slice's period. */
     irq_set_priority(PWM_IRQ_WRAP_0, PICO_DEFAULT_IRQ_PRIORITY + 0x10);
     pwm_clear_irq(AUD_IRQ_SLICE);
-#if PICO_RP2040
-    irq_set_exclusive_handler(PWM_IRQ_WRAP_0, aud_irq_entry);
-#else
     irq_set_exclusive_handler(PWM_IRQ_WRAP_0, aud_irq);
-#endif
     pwm_set_wrap(AUD_IRQ_SLICE, (SYS_RP2350_KHZ * 1000u) / AUD_NATIVE_RATE - 1);
     pwm_set_irq_enabled(AUD_IRQ_SLICE, true);
     irq_set_enabled(PWM_IRQ_WRAP_0, true);

@@ -289,7 +289,7 @@ unsigned long vga_frame_count(void)
     return __atomic_load_n(&vga_frames, __ATOMIC_RELAXED);
 }
 
-#if PICO_RP2040
+#if PICO1_DEBUG
 /* Pico 1 port debug: render time per scanline, worst case per core. */
 extern volatile uint32_t scanvideo_dbg_missed;
 static volatile uint32_t vga_dbg_render_max[2], vga_dbg_render_n[2];
@@ -318,7 +318,7 @@ static void vga_render_scanline(void)
     }
     vga_rendering[get_core_num()] = true;
     mutex_exit(&vga_scanline_mutex);
-#if PICO_RP2040
+#if PICO1_DEBUG
     const uint32_t dbg_t0 = timer_hw->timerawl;
 #endif
 
@@ -329,7 +329,7 @@ static void vga_render_scanline(void)
     bool filled[SCANVIDEO_PLANE_COUNT] = {false, false, false};
     uint32_t *foreground = NULL;
     vga_prog_t prog = *vga_prog_row(scanline_id);
-#if PICO_RP2040
+#if PICO1_DEBUG
     uint16_t dbg_fill[SCANVIDEO_PLANE_COUNT] = {0}, dbg_sprite[SCANVIDEO_PLANE_COUNT] = {0};
     uint32_t dbg_t = timer_hw->timerawl;
 #define VGA_DBG_LAP(arr, i)                         \
@@ -416,7 +416,7 @@ static void vga_render_scanline(void)
             break;
         }
     }
-#if PICO_RP2040
+#if PICO1_DEBUG
     {
         const uint32_t dt = timer_hw->timerawl - dbg_t0;
         const uint core = get_core_num();
@@ -546,7 +546,7 @@ void vga_task(void)
 {
     vga_scanvideo_switch();
     vga_render_scanline();
-#if PICO_RP2040
+#if PICO1_DEBUG
     /* Two short lines on alternate seconds: the console's buffer is 128
      * bytes and com_dbg_out drops anything over half its free room. */
     static absolute_time_t dbg_next;

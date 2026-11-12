@@ -39,7 +39,7 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
         cdc_mark_not_ready();
 }
 
-#if PICO_RP2040
+#if PICO1_DEBUG
 /* Pico 1 port development aids, out of band in the line coding so they never
  * collide with console data: 1200 baud reboots into BOOTSEL (the convention
  * of the Pico SDK's stdio_usb), and see cap.h for the capture commands. */

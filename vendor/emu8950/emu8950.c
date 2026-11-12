@@ -1147,24 +1147,9 @@ static void update_timer(OPL *opl) {
 #endif
 
 #if !EMU8950_LINEAR
-#if EMU8950_PROF
-/* Pico 1 port debug: cycles per section, read off the audio IRQ's PWM
- * counter (EMU8950_PROF is its CTR register address). */
-uint32_t emu8950_prof[3];
-#define PROF_NOW() (*(volatile uint32_t *)(EMU8950_PROF))
-#define PROF_TOP() (*(volatile uint32_t *)(EMU8950_PROF + 8))
-#define PROF_MARK(k) do { uint32_t _t = PROF_NOW(); \
-    emu8950_prof[k] += _t >= _p ? _t - _p : _t + PROF_TOP() + 1 - _p; _p = _t; } while (0)
-#else
-#define PROF_MARK(k) do { } while (0)
-#endif
-
 static void update_output(OPL *opl) {
     int16_t *out;
     int i;
-#if EMU8950_PROF
-    uint32_t _p = PROF_NOW();
-#endif
 
 #if !EMU8950_NO_TIMER
     update_timer(opl);
@@ -1178,9 +1163,7 @@ static void update_output(OPL *opl) {
 #else
     update_short_noise(opl);
 #endif
-    PROF_MARK(0);
     update_slots(opl);
-    PROF_MARK(1);
 
     out = opl->ch_out;
 
@@ -1232,7 +1215,6 @@ static void update_output(OPL *opl) {
         }
     }
     update_noise(opl, 2);
-    PROF_MARK(2);
 }
 
 INLINE static void mix_output(OPL *opl) {

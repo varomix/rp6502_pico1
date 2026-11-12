@@ -136,16 +136,7 @@ int aud_viz_pos(void);
 void aud_sst_save(sst_cursor_t *c, unsigned flags);
 bool aud_sst_load(sst_cursor_t *c, unsigned flags);
 
-/* Pico 1 port debug: aud_dbg_task prints the audio IRQ load while a device
- * plays. Removed before release with the other Pico 1 debug output. */
-#if PICO_RP2040
-void aud_dbg_task(void);
-#define AUD_TASK aud_dbg_task
-#else
-#define AUD_TASK nul_task
-#endif
-
-#define AUD_DRIVER DRIVER(aud_init, AUD_TASK, nul_task, nul_run, aud_stop, nul_break, \
+#define AUD_DRIVER DRIVER(aud_init, nul_task, nul_task, nul_run, aud_stop, nul_break, \
     nul_config, nul_config, SST(AUD_, 1, AUD_SST_SIZE, aud_sst_save, aud_sst_load))
 
 #endif /* _CORE_AUD_MIX_H_ */

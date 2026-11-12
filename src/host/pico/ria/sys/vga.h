@@ -18,7 +18,7 @@
 
 #define VGA_BACKCHANNEL_PIN COM_UART_TX_PIN
 #define VGA_BACKCHANNEL_BAUDRATE 115200
-#if PICO_RP2040 && !PICO1_BC_SPLIT
+#if PICO_RP2040
 /* Pico 1 port: the receiver and the VSYNC trap are one program,
  * vga_backchannel_rx_trap, in pio0's last SM, so that pio1 has room for the
  * CYW43 gSPI program. Receiver bytes use PIO0_IRQ_0; the trap is PIO IRQ
@@ -40,7 +40,7 @@
 // receiver above, because pio1 has no instruction memory left. A PIO reads a
 // GPIO input whatever the pin's function select is, so the trap waits on the
 // same pin as the receiver.
-#if !PICO_RP2040 || PICO1_BC_SPLIT
+#if !PICO_RP2040
 #define VGA_VSYNC_TRAP_PIO pio0
 #define VGA_VSYNC_TRAP_SM 3
 #define VGA_VSYNC_TRAP_IRQ PIO0_IRQ_0

@@ -5,6 +5,15 @@ set(RP6502_PROJECT_DEFINITIONS
     RP6502_CREATOR=0
 )
 
+# Pico 1 port: -DRP6502_PICO1_DEBUG=ON builds the development aids used by
+# tools/pico1 (VGA render timing and missed-scanline lines on the VGA USB
+# console, vgacap.py scanline capture, 1200 baud BOOTSEL, backchannel
+# registers in STATUS). Release builds leave it off.
+option(RP6502_PICO1_DEBUG "Pico 1 port: development aids on the consoles" OFF)
+if(RP6502_PICO1_DEBUG)
+    list(APPEND RP6502_PROJECT_DEFINITIONS PICO1_DEBUG=1)
+endif()
+
 # Force wrappers defined by pico_printf and pico_stdlib to be
 # preserved during link-time interprocedural optimizations.
 set(IPO_PRINTF_LINK_OPTIONS

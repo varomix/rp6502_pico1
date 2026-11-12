@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <pico.h>
 
-#if PICO_RP2040
+#if PICO1_DEBUG
 #define VGA_CAP 1
 #endif
 

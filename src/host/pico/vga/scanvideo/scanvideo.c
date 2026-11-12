@@ -165,7 +165,7 @@ static uint32_t _missing_scanline_data[] = {
     /*width-3*/ 0u | (COMPOSABLE_RAW_1P << 16u),
     0u | (COMPOSABLE_EOL_ALIGN << 16u)};
 static full_scanline_buffer_t _missing_scanline_buffer;
-#if PICO_RP2040
+#if PICO1_DEBUG
 volatile uint32_t scanvideo_dbg_missed; // Pico 1 port debug
 #endif
 
@@ -524,7 +524,7 @@ static void __not_in_flash_func(prepare_for_active_scanline_irqs_enabled)(void)
     if (!fsb || fsb->core.scanline_id != shared_state.scanline.next_scanline_id)
     {
         fsb = &_missing_scanline_buffer;
-#if PICO_RP2040
+#if PICO1_DEBUG
         scanvideo_dbg_missed++;
 #endif
     }

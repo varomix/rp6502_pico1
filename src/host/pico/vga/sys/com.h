@@ -34,7 +34,7 @@
  */
 
 void com_init(void);
-#if PICO_RP2040
+#if PICO1_DEBUG
 bool com_dbg_out(const char *buf, int length);
 #endif
 void com_task(void);

@@ -19,7 +19,9 @@
 #include "ria.pio.h"
 #include <pico/stdlib.h>
 #include <hardware/clocks.h>
+#if PICO1_DEBUG
 #include <hardware/dma.h>
+#endif
 #include <hardware/timer.h>
 #include <strings.h>
 #include <stdio.h>
@@ -54,8 +56,8 @@ static bool vga_vsync_alarm_arms;
 static volatile bool vga_vsync_trap_armed;
 static volatile bool vga_vsync_trap_fired;
 
-#if PICO_RP2040
-/* Pico 1 port bring-up: backchannel counters shown by STATUS. */
+#if PICO1_DEBUG
+/* Pico 1 port debug: backchannel counters shown by STATUS. */
 static volatile uint32_t vga_dbg_poll_bytes, vga_dbg_irq_bytes, vga_dbg_irq_calls;
 static volatile uint32_t vga_dbg_trap_fires, vga_dbg_arms, vga_dbg_vsyncs;
 static volatile int vga_dbg_lost_from = -1;
@@ -117,7 +119,7 @@ static void vga_vsync_trap_disarm(void)
     if (!vga_vsync_trap_armed)
         return;
     vga_vsync_trap_armed = false;
-#if PICO_RP2040 && !PICO1_BC_SPLIT
+#if PICO_RP2040
     // The trap shares its SM with the receiver: mask it, don't reset the SM.
     pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, false);
 #else
@@ -146,7 +148,7 @@ static void vga_vsync_alarm_handler(uint alarm)
     vga_vsync_trap_armed = true;
     vga_vsync_alarm_arms = false;
     VGA_DBG(vga_dbg_arms++);
-#if PICO_RP2040 && !PICO1_BC_SPLIT
+#if PICO_RP2040
     // Forget start bits from before the window; only the next one fires.
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
     irq_clear(VGA_VSYNC_TRAP_IRQ);
@@ -175,7 +177,7 @@ static void
     __isr
     __time_critical_func(vga_vsync_trap_irq_handler)(void)
 {
-#if PICO_RP2040 && !PICO1_BC_SPLIT
+#if PICO_RP2040
     pio_set_irq1_source_enabled(VGA_VSYNC_TRAP_PIO, pis_interrupt0, false);
 #endif
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
@@ -326,7 +328,7 @@ void __in_flash("vga_init") vga_init(void)
     pio_sm_set_consecutive_pindirs(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM,
                                    VGA_BACKCHANNEL_PIN, 1, false);
     gpio_pull_up(VGA_BACKCHANNEL_PIN);
-#if PICO_RP2040 && !PICO1_BC_SPLIT
+#if PICO_RP2040
     pio_sm_claim(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM); // keep it from CYW43
     int add = pio_add_program(VGA_BACKCHANNEL_PIO, &vga_backchannel_rx_trap_program);
     if (add < 0) // SDK 2.x returns an error instead of panicking
@@ -334,10 +336,6 @@ void __in_flash("vga_init") vga_init(void)
     uint offset = (uint)add;
     pio_sm_config c = vga_backchannel_rx_trap_program_get_default_config(offset);
 #else
-#if PICO_RP2040 // PICO1_BC_SPLIT diagnostic: upstream layout, claimed
-    pio_sm_claim(VGA_BACKCHANNEL_PIO, VGA_BACKCHANNEL_SM);
-    pio_sm_claim(VGA_VSYNC_TRAP_PIO, VGA_VSYNC_TRAP_SM);
-#endif
     uint offset = pio_add_program(VGA_BACKCHANNEL_PIO, &vga_backchannel_rx_program);
     pio_sm_config c = vga_backchannel_rx_program_get_default_config(offset);
 #endif
@@ -356,7 +354,7 @@ void __in_flash("vga_init") vga_init(void)
     irq_set_priority(VGA_BACKCHANNEL_IRQ, PICO_DEFAULT_IRQ_PRIORITY - 0x10);
     irq_set_enabled(VGA_BACKCHANNEL_IRQ, true);
 
-#if PICO_RP2040 && !PICO1_BC_SPLIT
+#if PICO_RP2040
     // The trap is the receiver's IRQ flag 0, masked until armed.
     (void)vga_vsync_trap_offset;
     pio_interrupt_clear(VGA_VSYNC_TRAP_PIO, 0);
@@ -478,7 +476,7 @@ int vga_boot_response(char *buf, size_t buf_size, int state, unsigned width)
 
 int vga_status_response(char *buf, size_t buf_size, int state, unsigned)
 {
-#if !PICO_RP2040
+#if !PICO1_DEBUG
     (void)state;
 #endif
     const char *msg = STR_VGA_SEARCHING;
@@ -500,7 +498,7 @@ int vga_status_response(char *buf, size_t buf_size, int state, unsigned)
         msg = STR_VGA_CONNECTION_LOST;
         break;
     }
-#if PICO_RP2040
+#if PICO1_DEBUG
     PIO p = VGA_BACKCHANNEL_PIO;
     uint sm = VGA_BACKCHANNEL_SM;
     switch (state)

@@ -93,7 +93,7 @@ static void com_out_chars(const char *buf, int length)
     }
 }
 
-#if PICO_RP2040
+#if PICO1_DEBUG
 bool com_dbg_out(const char *buf, int length) // Pico 1 port debug, USB only
 {
     // Never blocks: with no host reading, com_out_chars would wait forever.

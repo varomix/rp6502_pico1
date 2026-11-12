@@ -9,6 +9,7 @@ Each rom is a name on the drive (without .rp6502). For every display type
 lines ("[vga miss=... max0=..us max1=..us ...]", printed every 2 s on its
 USB console) for --secs seconds. The display type is put back to 0 at the
 end. Prints one line per run; a run with misses is marked "MISS".
+The VGA must run a debug build (PICO1_DEBUG=1 tools/pico1/build.sh).
 """
 import argparse, glob, os, re, select, termios, time, tty
 

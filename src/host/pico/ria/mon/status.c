@@ -19,11 +19,6 @@
 #include "ria/usb/vcp.h"
 #include <stdio.h>
 
-#if PICO_RP2040
-/* Pico 1 port debug: audio IRQ load, in ria/aud/mix.c. */
-int aud_status_response(char *buf, size_t buf_size, int state, unsigned width);
-#endif
-
 __in_flash("STATUS_NAME") static const char STATUS_NAME[] =
     RP6502_NAME "\n";
 
@@ -62,9 +57,6 @@ void status_mon_status(const char *args)
     mon_add_response_utf8(STATUS_NAME);
     mon_add_response_fn(status_version_response);
     mon_add_response_fn(vga_status_response);
-#if PICO_RP2040
-    mon_add_response_fn(aud_status_response);
-#endif
 #ifdef RP6502_RIA_W
     mon_add_response_fn(wifi_status_response);
     mon_add_response_fn(ntp_status_response);

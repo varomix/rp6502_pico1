@@ -52,7 +52,7 @@ void flash_task(void)
     if (!flash_page || !flash_staged)
         xip_update_begin(NULL, FLASH_STAGE_OFFS / FLASH_SECTOR_SIZE);
     flash_staged = true;
-#if PICO_RP2040 // Pico 1 port debug: result and time on the USB console
+#if PICO1_DEBUG // Pico 1 port debug: result and time on the USB console
     uint32_t t0 = time_us_32();
     bool ok = xip_update_page(offs, src);
     char dbg[64];

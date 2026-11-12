@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Pico 1 port: grab what the VGA Pico actually renders, over its USB console.
 
-Needs a VGA build with VGA_CAP (src/host/pico/vga/sys/cap.c, RP2040 builds).
+Needs a VGA debug build (PICO1_DEBUG=1 tools/pico1/build.sh), which has
+VGA_CAP (src/host/pico/vga/sys/cap.c).
 
   vgacap.py frame [--count N] [--out DIR]
       Sweep every canvas line and write N composited PNG frames. One image
