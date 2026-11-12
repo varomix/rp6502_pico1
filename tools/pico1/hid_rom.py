@@ -4,7 +4,7 @@
   hid_rom.py <out_dir>
 
 Echoes what is typed (the USB or BLE keyboard reaches the 6502 through the
-console, RIA_RX), and once a frame prints the mouse's five XRAM bytes
+console, RIA_RX; Backspace sends DEL and is echoed as BS SP BS), and once a frame prints the mouse's five XRAM bytes
 (buttons, x, y, wheel, pan) when any changed. Ctrl+G echoes BEL, which
 rings the RIA bell.
 """
@@ -34,6 +34,10 @@ def hid():
     p.bit_abs(RIA_READY)            # V = a typed byte is waiting
     with p.branch("bvc"):
         p.lda_abs(RIA_RX)
+        p.cmp_imm(0x7F)             # Backspace sends DEL, as a VT100 does
+        with p.branch("bne"):
+            p.say("\b \b")
+            p.jmp_abs("loop")
         p.jsr_abs("putc")
         p.cmp_imm(0x0D)
         with p.branch("bne"):

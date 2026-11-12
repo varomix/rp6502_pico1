@@ -246,7 +246,9 @@ Remaining work is the unchecked hardware items below, then Phase 5.
       (tests/cpu/hid/gamepad.py tester); MSC works (FLASH/LOAD from the stick)
 - [x] USB keyboard/mouse input (`tools/pico1/hid_rom.py`): typing incl.
       Enter, Backspace and shifted symbols, mouse movement, buttons and wheel
-      all correct on screen (2026-11-12, checked by eye)
+      all correct on screen (2026-11-12, checked by eye). Backspace sends
+      DEL (0x7F) like a VT100, so a program must echo BS SP BS; the first
+      ROM echoed DEL raw and nothing was erased.
 - [x] BLE gamepad: Xbox controller pairs (`SET BLE 2`) and every input reads,
       alongside the USB pad as P1. First end-to-end proof of the CYW43 on the
       repacked PIO. Its button labels report GAMEPAD_TYPE_UNKNOWN.
