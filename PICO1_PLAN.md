@@ -376,3 +376,5 @@ keyboard test, which needs a keyboard that pairs over Bluetooth LE.
   (it had kept SXGA from earlier tests, hence heavy blue lines at first).
   Keychron K4 also Classic-only; BLE keyboard set aside. Phase 5: debug
   output gated/removed, release.sh, README; 0.1 ria + vga images verified on hardware.
+- 2026-11-12 — Released pico1-v0.1 on GitHub (ria, ria-w, vga + SHA256SUMS).
+  Tags use a pico1- prefix: upstream's own v0.1 tag is in this repo.
