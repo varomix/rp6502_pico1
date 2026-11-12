@@ -138,7 +138,8 @@ Options, in order of preference:
 - [x] Release script: `tools/pico1/release.sh <ver>` writes
       `build/release/rp6502-pico1-<ver>-{ria,ria-w,vga}.uf2` + SHA256SUMS.
       0.1 ria + vga flashed on hardware: versions shown, no debug lines,
-      Klaus tests pass, RPMegaChopperII runs (2026-11-12). ria-w not yet.
+      Klaus tests pass, RPMegaChopperII looks and sounds right (user,
+      2026-11-12). ria-w not yet run on hardware.
 - [x] README section: what works, clocks, known limits, building.
 - [x] Host test suite: 132/133 pass; the one failure,
       `drive.fs_rom_open_is_the_one_way_in` (test_drive.c:58), fails the
